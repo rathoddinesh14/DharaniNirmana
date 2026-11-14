@@ -3,125 +3,220 @@
 
 ## 1. Purpose
 
-The Core module provides foundational types and utilities used across DharaniNirmana.
+The Core module provides foundational types and abstractions shared across DharaniNirmana.
 
-It must remain small, stable, graphics-independent, and free from domain-specific terrain logic.
+It is the lowest-level module in the architecture and must remain independent of all other DharaniNirmana modules.
 
 Core provides:
 
+- Mathematical vector types.
 - Error representation.
-- Result-based error handling.
-- Fundamental mathematical types.
-- Common validation conventions.
+- Explicit result types.
+- Shared low-level utilities.
 
-Core must not depend on any other DharaniNirmana module.
+The Core API must be lightweight, predictable, and suitable for use throughout the engine.
 
-## 2. Namespace and Header Organization
+## 2. Design Principles
 
-Namespace:
+The Core API follows these principles:
+
+- **Minimal dependencies:** Depend only on the C++ standard library.
+- **Explicit errors:** Operations that may fail communicate failure through Result types.
+- **Value semantics:** Mathematical types should behave as ordinary value types.
+- **Const correctness:** Read-only operations must not modify their operands.
+- **Numerical awareness:** Mathematical operations must document their behavior for invalid or unrepresentable values.
+- **Move support:** Result types must support move-only values.
+- **Clear contracts:** Public interfaces must define ownership, validity, and failure behavior.
+
+## 3. Namespace
+
+All public Core types belong to:
 
 ```cpp
-dharaninirmana::core
+namespace dharaninirmana::core {
+}
 ```
 
-Public headers:
+The namespace must remain consistent across all public headers and implementation files.
+
+## 4. Header and File Organization
+
+The initial Core files are organized as follows:
 
 ```text
-include/dharaninirmana/core/
-├── error.hpp
-├── result.hpp
-└── vector.hpp
+.
+├── include/dharaninirmana/core/
+│   ├── result.hpp
+│   ├── error.hpp
+│   ├── error_code.hpp
+│   ├── vec2d.hpp
+│   └── vec3d.hpp
+├── src/core/
+│   └── [private implementation files, if required]
+└── tests/core/
+    └── [Core API tests]
 ```
 
-## 3. Error Model
+Public headers define the Core API. Exact implementation and test filenames may be determined as implementation is organized.
 
-### 3.1 ErrorCode
+## 5. Mathematical Types
 
-The initial error categories are:
+### 5.1 Vec2d
 
-| Error Code | Meaning |
-|---|---|
-| InvalidArgument | An input argument is invalid |
-| InvalidState | An object is not in a valid state |
-| OutOfRange | An index or value is outside the permitted range |
-| InvalidData | Input or internal data violates an invariant |
-| UnsupportedOperation | The requested operation is unsupported |
-| ResourceExhausted | Required memory or another resource is unavailable |
-| InternalError | An unexpected internal failure occurred |
+`Vec2d` represents a two-dimensional vector using double-precision floating-point components.
 
-Module-specific error codes may be introduced later when generic categories are insufficient.
-
-### 3.2 Error Structure
-
-Conceptual structure:
+Conceptual declaration:
 
 ```cpp
-struct Error {
-    ErrorCode code;
-    std::string message;
+namespace dharaninirmana::core {
+
+struct Vec2d {
+    double x{};
+    double y{};
 };
+
+}
 ```
 
-Requirements:
+The type provides value semantics.
 
-- `code` identifies the failure category.
-- `message` provides diagnostic context.
-- Messages must not be used for programmatic error classification.
-- Error objects own their messages.
-- Error objects must not depend on external object lifetimes.
+It may support common operations such as:
 
-## 4. Result Type
+- Addition.
+- Subtraction.
+- Scalar multiplication.
+- Scalar division.
+- Equality comparison.
+- Dot product.
+- Length calculation.
+- Normalization.
 
-### 4.1 Design Decision
+The implementation must document the behavior of operations involving non-finite values and zero-length vectors.
 
-DharaniNirmana targets C++20.
+### 5.2 Vec3d
 
-`std::expected` is a C++23 facility and cannot be assumed.
+`Vec3d` represents a three-dimensional vector using double-precision floating-point components.
 
-DharaniNirmana will provide its own result abstraction implemented using:
+Conceptual declaration:
+
+```cpp
+namespace dharaninirmana::core {
+
+struct Vec3d {
+    double x{};
+    double y{};
+    double z{};
+};
+
+}
+```
+
+The type may support:
+
+- Addition.
+- Subtraction.
+- Scalar multiplication.
+- Scalar division.
+- Equality comparison.
+- Dot product.
+- Cross product.
+- Length calculation.
+- Normalization.
+
+### 5.3 Coordinate Convention
+
+DharaniNirmana uses the following coordinate convention:
+
+| Component | Meaning |
+|---|---|
+| X | Horizontal axis |
+| Y | Elevation axis |
+| Z | Horizontal axis |
+
+The vector types themselves remain generic mathematical types.
+
+They must not encode terrain-specific behavior.
+
+### 5.4 Numerical Behavior
+
+Vector operations must account for floating-point limitations.
+
+In particular:
+
+- Components may contain non-finite values unless an API explicitly requires finite vectors.
+- Length calculations should use numerically stable algorithms such as `std::hypot`.
+- Squared length calculations may overflow for large finite components.
+- Normalization must handle zero-length vectors explicitly.
+- Division by zero must not silently produce an apparently valid result.
+
+Core mathematical operations should not silently clamp or modify invalid inputs.
+
+Where an operation can fail, its failure behavior must be documented.
+
+## 6. Error Representation
+
+### 6.1 Purpose
+
+The `Error` type represents a failure detected by a public DharaniNirmana operation.
+
+It provides a common error representation across modules.
+
+### 6.2 Conceptual Interface
+
+```cpp
+namespace dharaninirmana::core {
+
+class Error {
+public:
+    // Error construction and inspection.
+};
+
+}
+```
+
+The exact representation is an implementation detail.
+
+The public interface should provide sufficient information to understand the failure.
+
+### 6.3 Error Information
+
+An Error should support:
+
+- An error category or code.
+- A human-readable diagnostic message.
+- Optional contextual information where useful.
+
+Error categories should be stable enough for programmatic inspection.
+
+Diagnostic messages may evolve as implementations improve.
+
+### 6.4 Error Ownership
+
+An Error owns its diagnostic information.
+
+It must not retain references to temporary strings or caller-owned buffers.
+
+Copying and moving an Error must preserve its diagnostic information.
+
+## 7. Result Type
+
+### 7.1 Purpose
+
+`Result<T>` represents the outcome of an operation that may either succeed with a value or fail with an Error.
+
+It avoids using exceptions as the normal mechanism for reporting expected operational failures.
+
+The type is based on:
 
 ```cpp
 std::variant<T, Error>
 ```
 
-The implementation will be header-only.
-
-No external dependency is required.
-
-### 4.2 Result Semantics
-
-A `Result<T>` contains exactly one of:
-
-- A successful value of type `T`.
-- An Error describing the failure.
-
-The result must never represent success and failure simultaneously.
-
-The result owns its contained value or error.
-
-### 4.3 Construction Policy
-
-Construction must be explicit.
-
-The public API should use named factories:
+### 7.2 Conceptual Interface
 
 ```cpp
-Result<T>::success(value)
+namespace dharaninirmana::core {
 
-Result<T>::failure(error)
-```
-
-Direct implicit construction from `T` or `Error` must not be supported.
-
-This prevents accidental ambiguity and makes success and failure visible at call sites.
-
-The implementation should use indexed variant construction internally so that `T` cannot be confused with the Error alternative.
-
-### 4.4 Public Interface
-
-The conceptual interface is:
-
-```cpp
 template <typename T>
 class Result {
 public:
@@ -129,7 +224,6 @@ public:
     static Result failure(Error error);
 
     bool hasValue() const noexcept;
-
     explicit operator bool() const noexcept;
 
     T& value() &;
@@ -138,290 +232,297 @@ public:
 
     Error& error() &;
     const Error& error() const &;
+    Error&& error() &&;
+
+private:
+    std::variant<T, Error> storage_;
 };
+
+}
 ```
 
-The implementation must support move-only value types.
+This declaration illustrates the intended contract.
 
-Copy operations should be available only when the contained type supports copying.
+The implementation may adjust constructors, constraints, and overloads while preserving the documented semantics.
 
-Move operations should follow the capabilities of the contained type.
+### 7.3 Explicit Construction
 
-Reference types are not valid Result value types.
-
-`Result<void>` must be implemented as a dedicated specialization.
-
-### 4.5 Accessor Behavior
-
-The following rules apply:
-
-- `value()` is valid only when the result contains a value.
-- `error()` is valid only when the result contains an error.
-- Invalid accessor usage is a programming error.
-- Invalid accessor usage must not silently return default or invalid data.
-
-The initial implementation will use `std::get` internally.
-
-Consequently, accessing the wrong alternative produces `std::bad_variant_access`.
-
-This provides predictable behavior using a standard C++ mechanism.
-
-The API does not treat invalid accessor usage as an ordinary operation failure.
-
-### 4.6 Result<void>
-
-Operations that do not produce a value use:
+Results must be created through explicit factories:
 
 ```cpp
-Result<void>
+auto result =
+    Result<HeightField>::success(std::move(heightField));
 ```
 
-Its conceptual implementation uses:
+Failure:
+
+```cpp
+auto result =
+    Result<HeightField>::failure(error);
+```
+
+Implicit conversion from a value or Error must not make it possible to construct an ambiguous result.
+
+### 7.4 State Inspection
+
+`hasValue()` returns true when the result contains a value.
+
+It returns false when the result contains an Error.
+
+The boolean conversion provides the same information:
+
+```cpp
+if (result) {
+    // Success
+} else {
+    // Failure
+}
+```
+
+### 7.5 Value Access
+
+Calling `value()` when the result contains an Error is a programming error.
+
+The implementation must report this misuse explicitly.
+
+The chosen access mechanism must have documented behavior, such as throwing `std::logic_error`.
+
+The implementation must not return an uninitialized or fabricated value.
+
+Value access should provide appropriate lvalue, const-lvalue, and rvalue overloads.
+
+### 7.6 Error Access
+
+Calling `error()` when the result contains a value is a programming error.
+
+The implementation must report this misuse explicitly, such as through `std::logic_error`.
+
+The implementation must not fabricate an Error or return invalid storage.
+
+Appropriate lvalue, const-lvalue, and rvalue overloads should be provided.
+
+## 8. Move-Only Value Support
+
+`Result<T>` must support move-only types.
+
+Examples include:
+
+- Types containing `std::unique_ptr`.
+- Resource-owning value types.
+- Types with deleted copy constructors.
+
+The implementation must not require `T` to be copy-constructible merely to instantiate or use a successful Result.
+
+The success factory must support moving a value into the Result.
+
+Value access through an rvalue Result must permit moving the contained value out.
+
+The implementation should use appropriate C++20 type constraints to prevent invalid operations from being instantiated.
+
+## 9. Result<void>
+
+### 9.1 Purpose
+
+Some operations report success or failure without producing a value.
+
+These operations use `Result<void>`.
+
+### 9.2 Representation
+
+The specialization uses:
 
 ```cpp
 std::optional<Error>
 ```
 
-Semantics:
+An empty optional represents success.
 
-- An empty optional represents success.
-- A populated optional represents failure.
+A populated optional represents failure.
 
-Public factories:
-
-```cpp
-Result<void>::success()
-
-Result<void>::failure(error)
-```
-
-Public access:
+### 9.3 Conceptual Interface
 
 ```cpp
-bool hasValue() const noexcept;
+namespace dharaninirmana::core {
 
-explicit operator bool() const noexcept;
+template <>
+class Result<void> {
+public:
+    static Result success();
+    static Result failure(Error error);
 
-const Error& error() const;
-```
+    bool hasValue() const noexcept;
+    explicit operator bool() const noexcept;
 
-The `value()` accessor is unnecessary for `Result<void>`.
+    void value() const;
 
-Calling `error()` on a successful result is a programming error and must produce a predictable diagnostic.
+    Error& error() &;
+    const Error& error() const &;
+    Error&& error() &&;
 
-### 4.7 Usage Example
+private:
+    std::optional<Error> error_;
+};
 
-```cpp
-Result<HeightField> result =
-    generator.generate(parameters);
-
-if (!result) {
-    reportError(result.error());
-    return;
-}
-
-HeightField terrain = std::move(result).value();
-```
-
-For operations without a return value:
-
-```cpp
-Result<void> result = validateMesh(mesh);
-
-if (!result) {
-    reportError(result.error());
-    return;
 }
 ```
 
-## 5. Error Propagation
+### 9.4 Success and Failure
 
-Components should preserve useful error information when propagating failures.
-
-Requirements:
-
-- Preserve the original error category where possible.
-- Add diagnostic context when it improves troubleshooting.
-- Do not silently discard failed results.
-- Do not replace meaningful errors with generic messages.
-- Do not expose partially initialized output objects.
-
-Routine validation failures should use Result rather than exceptions.
-
-Exceptions may still occur for exceptional runtime conditions or programming errors.
-
-## 6. Mathematical Primitives
-
-### 6.1 Design Goals
-
-Core provides basic mathematical primitives required by terrain and geometry calculations.
-
-These types must not depend on graphics APIs or external mathematics libraries.
-
-### 6.2 Vec2d
-
-Conceptual structure:
+Success:
 
 ```cpp
-struct Vec2d {
-    double x;
-    double y;
-};
+auto result = Result<void>::success();
 ```
 
-Used for generic two-dimensional mathematical operations.
-
-It must not be used to represent terrain-specific coordinate semantics when a dedicated domain type is clearer.
-
-### 6.3 Vec3d
-
-Conceptual structure:
+Failure:
 
 ```cpp
-struct Vec3d {
-    double x;
-    double y;
-    double z;
-};
+auto result = Result<void>::failure(error);
 ```
 
-Used for:
+### 9.5 Access Semantics
 
-- Three-dimensional positions.
-- Geometric calculations.
-- Surface normals.
-- Spatial calculations.
+Calling `value()` when the result represents failure is a programming error and must be reported explicitly.
 
-### 6.4 Precision Policy
+Calling `error()` when the result represents success is also a programming error and must be reported explicitly.
 
-Core mathematical primitives use double precision.
+The implementation should use `std::logic_error` for these invalid access operations.
 
-Rendering adapters may convert values to float when required by graphics APIs.
+## 10. Exception Policy
 
-### 6.5 Required Operations
+DharaniNirmana uses Result types for expected operational failures.
 
-Initial operations:
+Examples include:
 
-- Addition.
-- Subtraction.
-- Scalar multiplication.
-- Scalar division.
-- Dot product.
-- Cross product for Vec3d.
-- Vector length.
-- Normalization.
+- Invalid parameters.
+- Invalid terrain dimensions.
+- Numerical range violations.
+- Invalid mesh topology.
+- Unsupported operations.
+- Resource allocation failures, where they can be handled at the relevant boundary.
 
-Requirements:
+Exceptions are not the normal public mechanism for reporting these conditions.
 
-- Division by zero must be handled explicitly.
-- Zero-length normalization must not silently produce invalid values.
-- Non-finite results must be handled according to the operation contract.
-- Tolerance-based comparisons must use explicitly selected tolerances.
+Exceptions may still be used for programming errors, invalid Result access, and failures that cannot reasonably be represented through the documented result contract.
 
-## 7. Numerical Conventions
+The implementation must distinguish between expected operation failures and programming misuse.
 
-All public numerical APIs must document:
+## 11. Error Propagation
 
-- Expected units.
-- Valid ranges.
-- Precision expectations.
-- Tolerance requirements.
-- Behavior for non-finite values.
+Modules should propagate failures without losing useful diagnostic information.
 
-Initial conventions:
+Conceptually:
 
-| Concept | Convention |
-|---|---|
-| Internal coordinates | Double precision |
-| Elevation | Double precision |
-| Horizontal spacing | Double precision |
-| Mesh positions | Double precision |
-| Renderer positions | Converted when required |
-| Angles | Radians |
-| Length | Application-defined world units |
+```cpp
+auto generated = generator.generate(parameters);
 
-DharaniNirmana does not impose a physical unit system.
+if (!generated) {
+    return core::Result<terrain::HeightField>::failure(
+        generated.error()
+    );
+}
+```
 
-Applications must use consistent units within a terrain dataset.
+When additional context is useful, an error may be enriched with information about the operation that failed.
 
-## 8. Validation Utilities
+Error propagation must not silently convert a failure into success.
 
-Core may provide small reusable validation utilities.
+## 12. Type and Header Dependencies
 
-Initial requirements include:
+Core may depend on standard library facilities including:
 
-- Finite floating-point validation.
-- Positive numeric validation.
-- Valid numeric range checks.
-- Safe dimension calculations.
-- Non-zero vector magnitude checks.
+- `<variant>`
+- `<optional>`
+- `<string>`
+- `<string_view>`
+- `<stdexcept>`
+- `<cmath>`
+- `<limits>`
+- `<type_traits>`
+- `<utility>`
+- `<cstddef>`
 
-Domain-specific validation belongs in the corresponding module.
+Only the headers required by each public declaration should be included.
 
-## 9. Memory and Ownership
+Core must not include headers belonging to other DharaniNirmana modules or Vishwakarma.
 
-Core types follow normal C++ value semantics.
+## 13. Testing Requirements
 
-- Error owns its diagnostic message.
-- Result owns its contained value or error.
-- Mathematical primitives own no dynamic resources.
-- No global mutable error state is permitted.
-- No raw owning pointers are permitted.
+### 13.1 Mathematical Types
 
-## 10. Testing Requirements
+Test:
 
-### Error Tests
-
-- Error code correctness.
-- Message ownership.
-- Copy and move behavior.
-
-### Result Tests
-
-- Successful construction.
-- Failed construction.
-- Boolean conversion.
-- Value access.
-- Error access.
-- Result<void> behavior.
-- Move-only value support.
-- Copy behavior where supported.
-- Invalid accessor behavior.
-- Construction constraints.
-
-### Vector Tests
-
+- Default construction.
+- Component initialization.
 - Arithmetic operations.
 - Dot product.
 - Cross product.
-- Vector length.
-- Normalization.
-- Zero-length normalization.
-- Non-finite numerical cases.
+- Length calculation.
+- Zero-length normalization behavior.
+- Large finite components.
+- Non-finite components.
+- Overflow and underflow-sensitive calculations.
 
-Core tests must not require a graphics context.
+### 13.2 Result<T>
 
-## 11. Design Constraints
+Test:
 
-Core must not:
+- Successful construction.
+- Failure construction.
+- State inspection.
+- Boolean conversion.
+- Value access.
+- Error access.
+- Invalid access behavior.
+- Copyable values.
+- Move-only values.
+- Move construction.
+- Move assignment.
+- Const and rvalue access.
 
-- Depend on Vishwakarma.
-- Depend on OpenGL, GLFW, or Vulkan.
-- Depend on terrain-specific structures.
-- Introduce global mutable state.
-- Introduce unnecessary external dependencies.
-- Introduce a comprehensive mathematics framework without a concrete requirement.
+### 13.3 Result<void>
 
-## 12. Completion Criteria
+Test:
 
-The Core API is ready for implementation when:
+- Successful construction.
+- Failure construction.
+- State inspection.
+- Boolean conversion.
+- Valid value access.
+- Valid error access.
+- Invalid value access.
+- Invalid error access.
 
-- Error categories are defined.
-- Result<T> semantics are specified.
-- Result<void> semantics are specified.
-- Construction is explicit.
-- Accessor behavior is defined.
-- Mathematical primitives are documented.
-- Numerical conventions are established.
-- Ownership rules are explicit.
-- Independent tests are identified.
+### 13.4 Error
+
+Test:
+
+- Error construction.
+- Diagnostic preservation.
+- Error copying.
+- Error moving.
+- Error category inspection.
+
+## 14. Future Extensions
+
+Core may eventually include additional foundational mathematical types and utilities.
+
+Potential additions include:
+
+- Vec2f and Vec3f.
+- Mat3d and Mat4d.
+- Quaternion.
+- Bounding volumes.
+- Numerical utility functions.
+- Additional error categories.
+
+New abstractions must remain generic and must not introduce dependencies on higher-level engine modules.
+
+## 15. Related Documents
+
+- [API_DESIGN.md](API_DESIGN.md) — Public API conventions.
+- [TERRAIN_DATA_API.md](TERRAIN_DATA_API.md) — Terrain data representation.
+- [GENERATION_API.md](GENERATION_API.md) — Terrain generation.
+- [PROCESSING_API.md](PROCESSING_API.md) — Terrain processing.
+- [GEOMETRY_API.md](GEOMETRY_API.md) — Geometry representation.
+- [DEPENDENCY_RULES.md](../architecture/DEPENDENCY_RULES.md) — Module dependency constraints.

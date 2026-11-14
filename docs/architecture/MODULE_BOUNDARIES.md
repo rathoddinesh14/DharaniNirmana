@@ -680,7 +680,7 @@ Rendering is optional.
 The build option is:
 
 ```text
-TERRAFORGE_BUILD_RENDERING
+DHARANINIRMANA_BUILD_RENDERING
 ```
 
 Default:

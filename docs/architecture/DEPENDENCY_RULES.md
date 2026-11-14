@@ -282,7 +282,7 @@ The initial configuration should support:
 
 ```cmake
 option(
-    TERRAFORGE_BUILD_RENDERING
+    DHARANINIRMANA_BUILD_RENDERING
     "Build optional Vishwakarma rendering integration"
     OFF
 )

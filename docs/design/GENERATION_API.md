@@ -3,108 +3,92 @@
 
 ## 1. Purpose
 
-This document defines the public API for procedural terrain generation in DharaniNirmana.
+The Generation module provides algorithms for creating terrain data.
 
-The Generation module transforms generation parameters into a valid Terrain Data representation.
+It defines a consistent interface for configuring generators, requesting terrain generation, validating parameters, and returning generated terrain.
 
-Its responsibilities include:
+The initial implementation focuses on procedural height-field generation using value noise.
 
-- Defining generator interfaces.
-- Defining common terrain generation parameters.
-- Managing deterministic randomness.
-- Validating algorithm-specific configuration.
-- Producing HeightField instances.
-- Supporting multiple generation algorithms.
+The module depends on Core and Terrain and must remain independent of Geometry and Rendering.
 
-The Generation module must not depend on graphics APIs.
+## 2. Namespace and File Organization
 
-## 2. Design Goals
+The Generation module uses the `dharaninirmana::generation` namespace.
 
-The Generation API must:
-
-- Separate generation algorithms from terrain storage.
-- Support deterministic generation.
-- Make algorithm configuration explicit.
-- Produce valid HeightField instances.
-- Allow new algorithms without modifying existing terrain data structures.
-- Remain independently testable.
-- Avoid global random state.
-- Separate common terrain configuration from algorithm-specific configuration.
-
-## 3. Namespace and Header Organization
-
-Namespace:
-
-```cpp
-dharaninirmana::generation
-```
-
-Initial public headers:
+Its initial files are organized as follows:
 
 ```text
-include/dharaninirmana/generation/
-├── generation_parameters.hpp
-├── terrain_generator.hpp
-└── value_noise_generator.hpp
+.
+├── include/dharaninirmana/generation/
+│   ├── generation_parameters.hpp
+│   ├── value_noise_parameters.hpp
+│   └── value_noise_generator.hpp
+├── src/generation/
+│   └── value_noise_generator.cpp
+└── tests/generation/
+    └── value_noise_generator_tests.cpp
 ```
 
-Implementation:
+Public headers define the generation request, value-noise configuration, and generator API. Implementation details belong under `src/`, and Generation tests belong under `tests/`.
 
-```text
-src/generation/
-└── value_noise_generator.cpp
-```
+## 3. Design Principles
 
-Tests:
+The Generation API follows these principles:
 
-```text
-tests/generation/
-└── value_noise_generator_tests.cpp
-```
+- **Explicit configuration:** Algorithm-specific parameters are supplied when a generator is constructed.
+- **Separate generation requests:** Output dimensions and spatial properties are supplied for each generation request.
+- **Determinism:** Identical configurations and generation requests must produce identical results.
+- **Ownership:** Generated terrain owns its data independently of the generator.
+- **Validation:** Invalid or unsupported inputs must produce explicit errors.
+- **Numerical reliability:** Floating-point calculations and coordinate conversions must be checked for invalid or unrepresentable results.
 
-## 4. Generation Architecture
+## 4. Generation Model
 
-The Generation module consists of:
+Generation separates two categories of parameters.
 
-| Component | Responsibility |
+### 4.1 Algorithm Configuration
+
+Algorithm-specific parameters configure the generator.
+
+For example, value noise configuration may include:
+
+- Frequency.
+- Amplitude.
+- Seed-related configuration, if not supplied through the generation request.
+- Other algorithm-specific controls.
+
+These parameters are supplied during generator construction.
+
+The generator retains its configuration for subsequent generation requests.
+
+### 4.2 Generation Request
+
+Generation parameters describe the terrain to be produced.
+
+The initial `GenerationParameters` abstraction contains:
+
+| Parameter | Meaning |
 |---|---|
-| GenerationParameters | Defines common terrain dimensions and spatial configuration |
-| ITerrainGenerator | Defines the common generation contract |
-| ValueNoiseParameters | Defines value-noise-specific configuration |
-| ValueNoiseGenerator | Implements the first procedural algorithm |
+| Width | Number of samples along X |
+| Depth | Number of samples along Z |
+| Spacing X | Distance between adjacent samples along X |
+| Spacing Z | Distance between adjacent samples along Z |
+| Origin | World-space location of the first sample |
+| Seed | Seed controlling deterministic random variation |
 
-The generator is configured when it is created.
+The generation request must not contain algorithm-specific configuration.
 
-Generation calls supply only terrain-level parameters.
+This separation allows the same generator configuration to be reused for different terrain dimensions, locations, and seeds.
 
-Conceptual pipeline:
+## 5. Core Interfaces
 
-```text
-ValueNoiseParameters
-        |
-        v
-ValueNoiseGenerator::create()
-        |
-        v
-  Configured Generator
-        |
-        | GenerationParameters
-        v
-      generate()
-        |
-        v
-     HeightField
-```
+### 5.1 Generation Parameters
 
-## 5. Generation Parameters
-
-### 5.1 Common Parameters
-
-GenerationParameters defines properties shared by terrain generation algorithms.
-
-Conceptual structure:
+Conceptual declaration:
 
 ```cpp
+namespace dharaninirmana::generation {
+
 struct GenerationParameters {
     std::size_t width;
     std::size_t depth;
@@ -112,546 +96,391 @@ struct GenerationParameters {
     double spacingX;
     double spacingZ;
 
-    TerrainOrigin origin;
+    terrain::TerrainOrigin origin;
 
     std::uint64_t seed;
 };
+}
 ```
 
-The type belongs to:
+The declaration must use the terrain origin type and coordinate conventions defined in [TERRAIN_DATA_API.md](TERRAIN_DATA_API.md).
+
+### 5.2 Value Noise Configuration
+
+The value noise algorithm has a dedicated configuration type.
+
+Conceptually:
 
 ```cpp
-dharaninirmana::generation
-```
+namespace dharaninirmana::generation {
 
-It depends on the Terrain module for TerrainOrigin.
-
-### 5.2 Parameter Semantics
-
-| Parameter | Meaning |
-|---|---|
-| width | Number of samples along X |
-| depth | Number of samples along Z |
-| spacingX | Distance between adjacent X samples |
-| spacingZ | Distance between adjacent Z samples |
-| origin | Horizontal world-space origin |
-| seed | Deterministic random seed |
-
-The generated HeightField must preserve the supplied dimensions, spacing, and origin.
-
-### 5.3 Validation
-
-Before generation begins, validate:
-
-- Width and depth are at least 2.
-- Width multiplied by depth does not overflow.
-- Spacing values are finite and positive.
-- Origin coordinates are finite.
-- Calculated spatial extents are finite.
-- Requested allocation is representable and feasible.
-
-Invalid parameters must return an explicit Error.
-
-## 6. Generator Interface
-
-### 6.1 ITerrainGenerator
-
-All terrain generators follow a common interface.
-
-Conceptual API:
-
-```cpp
-class ITerrainGenerator {
-public:
-    virtual ~ITerrainGenerator() = default;
-
-    virtual Result<HeightField> generate(
-        const GenerationParameters& parameters
-    ) const = 0;
-};
-```
-
-The interface defines only the common generation operation.
-
-Algorithm-specific configuration does not belong in GenerationParameters unless it genuinely applies to all algorithms.
-
-### 6.2 Configuration Ownership
-
-Each concrete generator owns its algorithm-specific configuration.
-
-Configuration is supplied when creating the generator instance.
-
-The generator retains its configuration for its lifetime.
-
-The `generate()` operation receives only common terrain parameters.
-
-This separation provides:
-
-- A stable common generator interface.
-- Explicit algorithm configuration.
-- Reusable configured generator instances.
-- No algorithm-specific parameter leakage into other generators.
-
-### 6.3 Stateless Generation
-
-After construction, generators should behave as immutable algorithm configurations.
-
-Generation must not modify the stored algorithm configuration.
-
-Randomness must be derived from the seed supplied through GenerationParameters.
-
-This permits repeated calls using the same generator configuration.
-
-Independent calls must not depend on previous calls.
-
-## 7. First Algorithm: Value Noise
-
-The first implementation uses two-dimensional value noise.
-
-Value noise is selected because it is:
-
-- Relatively simple to implement.
-- Deterministic.
-- Suitable for continuous terrain elevation.
-- Useful for validating the generation architecture.
-- Easy to extend through multiple octaves.
-
-This implementation establishes the generation pipeline rather than targeting production-quality landscapes.
-
-## 8. Value Noise Configuration
-
-### 8.1 ValueNoiseParameters
-
-The algorithm-specific configuration is:
-
-```cpp
 struct ValueNoiseParameters {
-    double frequency;
-    double amplitude;
-    std::uint32_t octaves;
-    double persistence;
-    double lacunarity;
+    // Algorithm-specific configuration.
 };
+}
 ```
 
-This structure belongs to:
+The configuration type must contain only parameters relevant to the value noise algorithm.
+
+It must not duplicate output dimensions, terrain origin, or sample spacing from `GenerationParameters`.
+
+### 5.3 Value Noise Generator
+
+Conceptual interface:
 
 ```cpp
-dharaninirmana::generation
-```
+namespace dharaninirmana::generation {
 
-It is independent of terrain dimensions, origin, spacing, and seed.
-
-### 8.2 Parameter Definitions
-
-| Parameter | Meaning |
-|---|---|
-| frequency | Initial spatial frequency |
-| amplitude | Initial elevation amplitude |
-| octaves | Number of noise layers |
-| persistence | Amplitude multiplier between octaves |
-| lacunarity | Frequency multiplier between octaves |
-
-### 8.3 Validation
-
-Configuration must satisfy:
-
-- Frequency is finite and positive.
-- Amplitude is finite and non-negative.
-- Octaves are at least 1.
-- Octave count does not exceed the documented implementation limit.
-- Persistence is finite and non-negative.
-- Lacunarity is finite and positive.
-- Derived frequencies and amplitudes remain representable.
-- Intermediate calculations must not silently overflow.
-
-The maximum octave count must be selected and documented during implementation.
-
-## 9. ValueNoiseGenerator Construction
-
-### 9.1 Factory API
-
-The generator is created using a validated factory.
-
-Conceptual API:
-
-```cpp
-class ValueNoiseGenerator final : public ITerrainGenerator {
+class ValueNoiseGenerator {
 public:
-    static Result<ValueNoiseGenerator> create(
-        const ValueNoiseParameters& parameters
-    );
+    static core::Result<ValueNoiseGenerator>
+    create(const ValueNoiseParameters& parameters);
 
-    Result<HeightField> generate(
-        const GenerationParameters& parameters
-    ) const override;
+    core::Result<terrain::HeightField>
+    generate(const GenerationParameters& parameters) const;
 
 private:
     explicit ValueNoiseGenerator(
-        ValueNoiseParameters parameters
+        const ValueNoiseParameters& parameters
     );
 
     ValueNoiseParameters parameters_;
 };
-```
-
-The constructor is private.
-
-Applications must use the factory to create a configured generator.
-
-### 9.2 Construction Behavior
-
-`create()` must:
-
-1. Validate all ValueNoiseParameters.
-2. Validate derived configuration values where practical.
-3. Return an error if configuration is invalid.
-4. Construct the generator only after successful validation.
-
-The resulting generator owns a copy of its configuration.
-
-Its configuration cannot be modified through the public API.
-
-### 9.3 Usage Example
-
-Conceptual usage:
-
-```text
-ValueNoiseParameters noiseParameters{
-    .frequency = 0.01,
-    .amplitude = 100.0,
-    .octaves = 5,
-    .persistence = 0.5,
-    .lacunarity = 2.0
-};
-
-auto generatorResult =
-    ValueNoiseGenerator::create(noiseParameters);
-
-if (!generatorResult) {
-    reportError(generatorResult.error());
-    return;
 }
-
-auto generator = std::move(generatorResult).value();
-
-GenerationParameters terrainParameters{
-    .width = 512,
-    .depth = 512,
-    .spacingX = 1.0,
-    .spacingZ = 1.0,
-    .origin = TerrainOrigin{0.0, 0.0},
-    .seed = 12345
-};
-
-auto terrainResult =
-    generator.generate(terrainParameters);
 ```
 
-This demonstrates the separation between algorithm configuration and terrain configuration.
+The generator is created through a validating factory.
 
-The example is conceptual; exact initialization and error-reporting helpers will be finalized during implementation.
+Invalid algorithm configuration must not produce a usable generator.
 
-## 10. Noise Algorithm
+The generator owns its configuration and does not retain references to caller-owned configuration objects.
 
-### 10.1 Lattice Values
+The `generate` operation is logically const and does not modify the generator configuration.
 
-Value noise operates over a two-dimensional integer lattice.
+## 6. Generator Construction
 
-Each lattice point receives a deterministic pseudo-random value derived from:
+The `create` operation validates algorithm-specific configuration.
 
-- Integer lattice coordinates.
-- Generation seed.
-- Octave index.
+Validation includes:
 
-The same coordinates, seed, and octave must always produce the same value.
+- All floating-point parameters must be finite.
+- Parameters requiring positive values must be strictly positive.
+- Parameters requiring non-negative values must not be negative.
+- Integer parameters must satisfy documented algorithm limits.
+- Combinations of parameters must remain within supported numerical limits.
 
-No global random number generator is permitted.
+The exact validation rules depend on the algorithm.
 
-### 10.2 Interpolation
+If configuration is invalid, the factory returns a failure result with a useful diagnostic.
 
-For a noise coordinate:
+A successfully constructed generator must satisfy all documented configuration invariants.
 
-```text
-(x, z)
-```
+## 7. Generation Request Validation
 
-Find the four surrounding lattice points:
+Before allocating or generating terrain, the generator must validate the request.
 
-```text
-(x0, z0)
-(x1, z0)
-(x0, z1)
-(x1, z1)
-```
+### 7.1 Dimensions
 
-Calculate fractional coordinates:
+- Width must be at least 2.
+- Depth must be at least 2.
+- The product `width * depth` must not overflow `std::size_t`.
+- The resulting allocation size must be supported by the implementation and available resources.
 
-```text
-tx = x - x0
-tz = z - z0
-```
+Dimension validation must occur before calculating or allocating the elevation buffer.
 
-Use the quintic fade function:
+### 7.2 Spacing
 
-```text
-fade(t) = 6t^5 - 15t^4 + 10t^3
-```
+- `spacingX` must be finite and strictly positive.
+- `spacingZ` must be finite and strictly positive.
 
-Interpolate horizontally between lattice values, then vertically between the resulting values.
+Zero, negative, NaN, and infinite spacing values are invalid.
 
-This produces continuous noise across lattice cell boundaries.
+### 7.3 Origin
 
-### 10.3 Octave Combination
+Both origin coordinates must be finite.
 
-For octave index i:
+The origin represents the world-space location of the first sample.
 
-```text
-octaveFrequency = frequency * lacunarity^i
+### 7.4 Spatial Extent
 
-octaveAmplitude = amplitude * persistence^i
-```
+The last sample coordinates must be representable and finite.
 
-The final elevation is:
+For a terrain with width $W$ and depth $D$:
 
-```text
-height(x, z) =
-    sum(
-        octaveAmplitude[i] *
-        noise(
-            x * octaveFrequency[i],
-            z * octaveFrequency[i],
-            seed,
-            i
-        )
-    )
-```
+$$
+x_{\max} = origin_x + (W-1)\,spacingX
+$$
 
-The implementation must use numerically safe accumulation.
+$$
+z_{\max} = origin_z + (D-1)\,spacingZ
+$$
 
-Normalization is deferred.
+The implementation must verify that these calculations do not overflow or produce non-finite values.
 
-The initial implementation must document the resulting elevation range and the effect of configuration parameters.
+A request that produces an invalid spatial extent must fail before generation begins.
 
-## 11. Coordinate Sampling
+## 8. Coordinate Mapping
 
-Noise coordinates are based on world-space horizontal positions.
+Generation algorithms operate on a regular terrain grid.
 
-For a HeightField sample:
+For sample coordinates $(i,j)$:
 
-```text
-worldX = origin.x + x * spacingX
+$$
+worldX = origin_x + i\,spacingX
+$$
 
-worldZ = origin.z + z * spacingZ
-```
+$$
+worldZ = origin_z + j\,spacingZ
+$$
 
-The generator evaluates noise at these coordinates.
+The generated elevation is stored at:
 
-Frequency determines the spatial scale of the generated pattern.
+$$
+index = j \cdot width + i
+$$
 
-Generation must respect the configured world-space origin and spacing.
+The resulting HeightField follows the coordinate convention:
 
-## 12. Determinism Contract
+- X: Horizontal position.
+- Z: Horizontal position.
+- Y: Elevation.
 
-The complete generation configuration consists of:
+The same coordinate mapping must be used consistently by generation, terrain processing, and geometry construction.
 
-- Generator algorithm.
-- Algorithm-specific configuration.
-- Common terrain parameters.
-- Random seed.
+## 9. Value Noise Evaluation
 
-For identical configurations and inputs, repeated generation must produce identical terrain.
+Value noise evaluates a continuous field using values associated with integer lattice coordinates.
 
-The output must have identical:
+A conceptual evaluation follows these steps:
 
-- Dimensions.
-- Spacing.
-- TerrainOrigin.
-- Elevation samples.
+1. Transform the input world coordinates into noise-space coordinates.
+2. Identify the surrounding lattice points.
+3. Retrieve deterministic pseudo-random values at those lattice points.
+4. Interpolate the values.
+5. Apply the configured amplitude and other algorithm-specific transformations.
 
-Generation must not depend on:
+The implementation must produce deterministic lattice values.
 
-- Global random state.
-- Current time.
+The lattice value must depend only on the documented seed and lattice coordinates.
+
+It must not depend on:
+
+- Memory addresses.
 - Uninitialized memory.
-- Previous generator calls.
 - Thread scheduling.
-- Unspecified iteration order.
+- Non-deterministic global random state.
 
-The initial guarantee applies to the same implementation and supported numerical environment.
+## 10. Numerical Robustness
 
-Bitwise-identical output across different compilers and processor architectures is not guaranteed until explicitly validated.
+Numerical reliability is part of the public behavior of the generation API.
+
+### 10.1 Finite Input Validation
+
+All floating-point inputs used by generation must be validated.
+
+The implementation must reject:
+
+- NaN.
+- Positive infinity.
+- Negative infinity.
+- Invalid spacing.
+- Non-finite origin.
+- Non-finite algorithm parameters.
+
+### 10.2 Lattice Coordinate Conversion
+
+Value noise commonly transforms continuous coordinates into integer lattice coordinates using floor operations.
+
+For a continuous noise-space coordinate $u$:
+
+$$
+i = \lfloor u \rfloor
+$$
+
+The conversion from floating-point coordinates to integer lattice coordinates must be checked.
+
+The implementation must not perform an unchecked floating-point-to-integer conversion when the value is outside the representable range.
+
+The implementation must also ensure that obtaining the neighboring lattice coordinate does not overflow the integer type.
+
+If a coordinate cannot be represented safely, generation must fail with a numerical-range error.
+
+The implementation must not silently wrap, clamp, or substitute an arbitrary lattice coordinate.
+
+### 10.3 Noise-Space Coordinate Calculation
+
+The transformation from world coordinates to noise-space coordinates must be evaluated safely.
+
+For example, if frequency is applied to world coordinates:
+
+$$
+u = worldX \cdot frequency
+$$
+
+$$
+v = worldZ \cdot frequency
+$$
+
+The implementation must check that the resulting coordinates are finite and within the supported lattice-coordinate range.
+
+A finite world coordinate does not guarantee that its transformed noise-space coordinate is representable.
+
+### 10.4 Interpolation
+
+Interpolation must avoid unnecessary overflow.
+
+The implementation should prefer numerically stable formulations and validate intermediate results where overflow is possible.
+
+Interpolation must not silently convert invalid intermediate values into apparently valid terrain elevations.
+
+### 10.5 Elevation Output
+
+Every generated elevation must be finite.
+
+If any sample becomes NaN or infinity, generation must fail rather than returning a partially valid HeightField.
+
+The generator must not return a successful result containing invalid elevation samples.
+
+### 10.6 Intermediate Arithmetic
+
+The implementation must consider overflow and underflow in intermediate calculations, not merely validate the final result.
+
+Where an intermediate calculation can overflow despite a mathematically representable final result, use a numerically safer formulation where practical.
+
+The supported numerical range must be documented.
+
+## 11. Determinism
+
+Generation must be reproducible.
+
+For a fixed combination of:
+
+- Generator configuration.
+- Generation parameters.
+- Seed.
+- Implementation version and documented numerical behavior.
+
+The generator must produce the same elevation samples.
+
+The implementation must use deterministic pseudo-random lattice values.
+
+If parallel generation is introduced, the output must remain independent of execution order and thread scheduling.
+
+Cross-platform bitwise identity is not guaranteed unless the implementation explicitly adopts and tests a cross-platform numerical reproducibility policy.
+
+## 12. Memory and Ownership
+
+The generated HeightField owns its elevation storage.
+
+The generator must not return a HeightField that references:
+
+- Temporary buffers.
+- Generator-internal mutable storage.
+- Caller-owned memory.
+- Reused scratch memory.
+
+The generated result must remain valid after the generator is destroyed.
+
+Generation must either complete successfully with a fully valid HeightField or return a failure result.
+
+No partially initialized terrain object may escape through a successful result.
 
 ## 13. Error Handling
 
-Generator creation returns:
+The public generation API returns:
 
 ```cpp
-Result<ValueNoiseGenerator>
+core::Result<terrain::HeightField>
 ```
 
-Generation returns:
+Expected failure categories include:
 
-```cpp
-Result<HeightField>
-```
-
-Expected failures include:
-
-| Condition | Error Category |
+| Category | Example |
 |---|---|
-| Invalid frequency | InvalidArgument |
-| Invalid amplitude | InvalidArgument |
-| Invalid octave count | InvalidArgument |
-| Invalid persistence | InvalidArgument |
-| Invalid lacunarity | InvalidArgument |
-| Invalid terrain dimensions | InvalidArgument |
-| Invalid spacing | InvalidArgument |
-| Invalid origin | InvalidArgument |
-| Dimension overflow | InvalidArgument |
-| Non-finite intermediate data | InvalidData |
-| Allocation failure | ResourceExhausted |
+| Invalid configuration | Non-finite frequency |
+| Invalid dimensions | Width or depth below 2 |
+| Invalid spacing | Zero or negative spacing |
+| Invalid origin | Non-finite coordinate |
+| Size overflow | Width multiplied by depth overflows |
+| Spatial overflow | Last sample coordinate is not finite |
+| Numerical range | Noise-space coordinate exceeds supported lattice range |
+| Numerical failure | Non-finite intermediate or output |
+| Resource failure | Allocation cannot be completed |
 
-The generator must not return partially initialized terrain.
+Errors should identify the failed operation and provide useful diagnostic context.
 
-Allocation failures should be translated into the documented result error where practical and supported by the project's exception policy.
+The implementation must not silently change invalid inputs to make generation succeed.
 
-## 14. Memory and Performance
+## 14. Thread Safety
 
-The initial generator produces a contiguous HeightField.
+A successfully constructed generator should be safe for concurrent generation requests when its implementation uses only immutable configuration and request-local state.
 
-Requirements:
+The implementation must not use shared mutable scratch buffers or unsynchronized global random state.
 
-- Allocate elevation storage once where practical.
-- Avoid unnecessary temporary arrays.
-- Use predictable iteration order.
-- Keep noise evaluation independent of graphics resources.
-- Avoid premature parallelization.
-- Reuse immutable algorithm configuration across generation calls.
-
-The initial implementation prioritizes correctness and deterministic behavior.
-
-Performance optimization will follow profiling.
+If an implementation cannot satisfy concurrent use, that limitation must be explicitly documented.
 
 ## 15. Testing Requirements
 
-### Configuration Validation
+The Generation module must include tests for:
+
+### 15.1 Configuration
 
 - Valid configuration.
-- Invalid frequency.
-- Invalid amplitude.
-- Invalid octave count.
-- Invalid persistence.
-- Invalid lacunarity.
-- Excessive octave count.
-- Invalid derived frequency or amplitude.
+- Invalid floating-point parameters.
+- Boundary values.
+- Unsupported parameter combinations.
 
-### Construction
-
-- Successful factory creation.
-- Invalid configuration returns an error.
-- Generator retains its configuration.
-- No invalid generator can be constructed through the public API.
-
-### Generation Parameters
+### 15.2 Generation Requests
 
 - Minimum valid dimensions.
 - Invalid dimensions.
+- Dimension multiplication overflow.
 - Invalid spacing.
 - Invalid origin.
 - Spatial extent overflow.
-- Dimension multiplication overflow.
 
-### Determinism
+### 15.3 Numerical Behavior
 
-- Same configuration and seed produce identical terrain.
-- Different seeds produce different terrain for a suitable non-degenerate configuration.
-- Repeated calls on the same generator produce identical results.
-- Independent generator instances with identical configuration produce identical results.
+- Large world coordinates.
+- Noise-space coordinate overflow.
+- Lattice-coordinate range boundaries.
+- Neighboring lattice-coordinate overflow.
+- Non-finite intermediate values.
+- Non-finite elevation output.
 
-### Spatial Properties
+### 15.4 Determinism
 
-- Correct dimensions.
-- Correct spacing.
-- Correct TerrainOrigin.
-- Correct sample count.
-- Correct world-space sampling behavior.
+- Same configuration and seed produce identical results.
+- Different seeds produce different results for representative test inputs.
+- Repeated generation does not depend on previous requests.
+- Concurrent generation produces the same results as sequential generation.
 
-### Noise Properties
+### 15.5 Ownership
 
-- Deterministic lattice values.
-- Continuity across lattice boundaries.
-- Correct interpolation.
-- Correct octave combination.
-- Finite output values.
+- Generated terrain remains valid after generator destruction.
+- Generated terrain owns its elevation storage.
+- Failed generation does not expose partially initialized output.
 
-### Failure Behavior
+## 16. Future Extensions
 
-- Invalid configuration returns an error.
-- Invalid generation parameters return an error.
-- Failed generation does not expose partial terrain.
-- Allocation failures follow the documented error policy.
+The Generation module may eventually support:
 
-All Generation tests must run without a graphics context.
-
-## 16. Initial Implementation Files
-
-The initial Generation module should contain:
-
-```text
-include/dharaninirmana/generation/
-├── generation_parameters.hpp
-├── terrain_generator.hpp
-└── value_noise_generator.hpp
-
-src/generation/
-└── value_noise_generator.cpp
-
-tests/generation/
-└── value_noise_generator_tests.cpp
-```
-
-Additional private files may be introduced for hashing, interpolation, and noise evaluation when implementation complexity justifies separation.
-
-## 17. Future Extensions
-
-The architecture should allow future algorithms such as:
-
-- Fractal Brownian motion variations.
 - Gradient noise.
-- Simplex noise.
-- Ridged multifractal noise.
+- Fractal Brownian motion.
 - Domain warping.
-- Hybrid terrain generation.
-- Erosion-based generation.
+- Ridged multifractal noise.
+- Cellular noise.
+- Hybrid procedural terrain algorithms.
+- Parallel generation.
+- GPU-assisted generation.
 
-Each algorithm should own its own configuration and implement the common generator contract when it produces the same HeightField representation.
+New algorithms must follow the same separation between algorithm configuration and generation requests unless a documented algorithm-specific requirement justifies a different contract.
 
-## 18. Design Decisions Deferred
+## 17. Related Documents
 
-The following details will be finalized during implementation:
-
-- Exact hash or pseudo-random function.
-- Exact lattice value range.
-- Noise normalization strategy.
-- Maximum supported octave count.
-- Allocation size policy.
-- Numerical tolerances.
-- Exact derived-value validation strategy.
-
-The construction model and separation between common and algorithm-specific parameters are architectural decisions and must not be changed casually.
-
-## 19. Completion Criteria
-
-The Generation API is ready for implementation when:
-
-- Common generation parameters are defined.
-- Generator interface is established.
-- Algorithm-specific configuration is separate.
-- Generator construction validates configuration.
-- Generation calls receive only common parameters.
-- First algorithm is selected.
-- Determinism requirements are explicit.
-- Validation rules are defined.
-- Error behavior is documented.
-- Independent tests are identified.
+- [API_DESIGN.md](API_DESIGN.md) — Public API conventions.
+- [CORE_API.md](CORE_API.md) — Core types and Result semantics.
+- [TERRAIN_DATA_API.md](TERRAIN_DATA_API.md) — HeightField representation.
+- [PROCESSING_API.md](PROCESSING_API.md) — Terrain transformation operations.
+- [GEOMETRY_API.md](GEOMETRY_API.md) — Geometry construction.
+- [DEPENDENCY_RULES.md](../architecture/DEPENDENCY_RULES.md) — Module dependencies.

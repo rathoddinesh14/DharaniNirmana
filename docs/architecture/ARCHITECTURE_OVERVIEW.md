@@ -469,7 +469,7 @@ DharaniNirmana::Rendering
 Rendering is controlled through:
 
 ```text
-TERRAFORGE_BUILD_RENDERING
+DHARANINIRMANA_BUILD_RENDERING
 ```
 
 The option defaults to OFF.

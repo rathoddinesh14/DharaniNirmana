@@ -538,7 +538,7 @@ DharaniNirmana::Rendering
 Rendering is optional and controlled by:
 
 ```text
-TERRAFORGE_BUILD_RENDERING
+DHARANINIRMANA_BUILD_RENDERING
 ```
 
 The option should default to OFF.

@@ -7,7 +7,10 @@ DharaniNirmana is a modular C++ terrain generation engine designed to create, ma
 
 The engine focuses on procedural terrain generation, heightfield representation, terrain processing, mesh construction, and extensible terrain algorithms.
 
-DharaniNirmana uses Vishwakarma as its graphics foundation while maintaining a strict separation between terrain-domain functionality and rendering infrastructure.
+DharaniNirmana is graphics-independent at its core.
+It provides an optional rendering integration that demonstrates
+how terrain geometry can be consumed through Vishwakarma.
+Applications may use alternative rendering systems.
 
 ## 2. Vision
 

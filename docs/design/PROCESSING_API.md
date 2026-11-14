@@ -3,634 +3,504 @@
 
 ## 1. Purpose
 
-This document defines the public API for terrain processing in DharaniNirmana.
+The Processing module provides operations that transform existing terrain data.
 
-The Processing module provides operations that transform existing terrain data into new terrain representations.
+It operates on terrain representations without depending on the algorithms that originally generated them.
 
-Processing is separate from terrain generation.
+The initial implementation focuses on fundamental elevation-processing operations:
 
-Generation creates terrain from parameters. Processing modifies or derives terrain from existing terrain.
+- Smoothing.
+- Elevation normalization.
 
-The module must remain independent of rendering and graphics APIs.
+The module depends on Core and Terrain and must remain independent of Generation, Geometry, and Rendering.
 
-## 2. Design Goals
+## 2. Namespace and File Organization
 
-The Processing API must:
+The Processing module uses the `dharaninirmana::processing` namespace.
 
-- Provide reusable terrain transformations.
-- Support composition of multiple operations.
-- Preserve terrain metadata unless explicitly documented otherwise.
-- Make mutation behavior predictable.
-- Validate operation parameters.
-- Avoid hidden state.
-- Support deterministic processing.
-- Remain independently testable.
-
-## 3. Namespace and Header Organization
-
-Namespace:
-
-```cpp
-dharaninirmana::processing
-```
-
-Initial public headers:
+Its initial directory structure is:
 
 ```text
-include/dharaninirmana/processing/
-├── terrain_operation.hpp
-├── height_operations.hpp
-└── smoothing_operation.hpp
+.
+├── include/dharaninirmana/processing/
+│   └── [operation-specific public headers]
+├── src/processing/
+│   └── [operation implementations]
+└── tests/processing/
+    └── [operation tests]
 ```
 
-Implementation:
+Exact filenames will be selected as the operation interfaces are finalized.
 
-```text
-src/processing/
-├── height_operations.cpp
-└── smoothing_operation.cpp
-```
+## 3. Design Principles
 
-Tests:
+The Processing API follows these principles:
 
-```text
-tests/processing/
-├── height_operations_tests.cpp
-└── smoothing_operation_tests.cpp
-```
+- **Explicit operations:** Each operation has a clearly defined input, output, and parameter contract.
+- **Controlled mutation:** APIs must make it clear whether an operation modifies its input or creates a new result.
+- **Data preservation:** Terrain dimensions and spatial metadata must remain unchanged unless explicitly documented otherwise.
+- **Numerical robustness:** Intermediate calculations must be designed to avoid unnecessary overflow and underflow.
+- **Validation:** Invalid parameters and invalid terrain data must produce explicit errors.
+- **Composability:** Processing operations should be usable independently and combined into larger workflows.
 
 ## 4. Processing Model
 
-### 4.1 Input and Output
+Processing operations consume an existing HeightField and produce a transformed HeightField.
 
-The initial processing model is:
-
-```text
-HeightField
-    |
-    v
-Processing Operation
-    |
-    v
-New HeightField
-```
-
-Operations receive a read-only input and produce a new output.
-
-Conceptual contract:
-
-```cpp
-Result<HeightField> operation(
-    const HeightField& input
-) const;
-```
-
-This prevents accidental mutation of the source terrain.
-
-### 4.2 Immutable-by-Default Policy
-
-The initial public processing API must not mutate its input.
-
-Benefits:
-
-- Predictable behavior.
-- Easier unit testing.
-- Safe reuse of source terrain.
-- Straightforward operation composition.
-- Reduced risk of partial mutation after failure.
-
-In-place processing may be considered later if profiling demonstrates a meaningful performance requirement.
-
-It must be introduced explicitly rather than silently changing existing operation semantics.
-
-## 5. Terrain Operation Interface
-
-The initial architecture supports a common operation contract.
-
-Conceptual interface:
-
-```cpp
-class ITerrainOperation {
-public:
-    virtual ~ITerrainOperation() = default;
-
-    virtual Result<HeightField> apply(
-        const HeightField& input
-    ) const = 0;
-};
-```
-
-The interface represents a transformation from one valid HeightField to another.
-
-Not every operation needs to use this interface. Simple free functions are acceptable where they produce a clearer API.
-
-Avoid introducing excessive inheritance solely for uniformity.
-
-## 6. Initial Operations
-
-The first implementation will provide five operations.
-
-| Operation | Purpose |
-|---|---|
-| Height Scaling | Multiply elevations by a factor |
-| Height Offset | Add a constant elevation offset |
-| Height Clamping | Restrict elevations to a range |
-| Height Normalization | Map elevation range into a target range |
-| Smoothing | Reduce local elevation variation |
-
-Each operation must preserve dimensions, spacing, and origin.
-
-## 7. Height Scaling
-
-### Responsibility
-
-Multiply every elevation sample by a specified scale factor.
-
-Conceptual transformation:
+The initial API uses a non-mutating model:
 
 ```text
-outputHeight = inputHeight * scale
+       Input HeightField
+               |
+               v
+       Validate Input
+               |
+               v
+       Processing Operation
+               |
+               v
+       Validate Output
+               |
+               v
+       Result<HeightField>
 ```
 
-### Parameters
+The input terrain remains unchanged.
 
-```cpp
-struct HeightScaleParameters {
-    double scale;
-};
-```
+The returned HeightField owns its elevation storage independently of the input.
 
-### Validation
+## 5. Common Processing Contract
 
-- Scale must be finite.
-- Negative scale values are permitted because vertical inversion may be useful.
-- Every resulting elevation must remain finite.
+Every public processing operation must follow these rules:
 
-### API
+1. Validate the input terrain.
+2. Validate operation-specific parameters.
+3. Check dimensions and allocation requirements.
+4. Perform the transformation.
+5. Validate the generated elevations.
+6. Preserve terrain metadata.
+7. Return an owned HeightField on success.
+8. Return a meaningful error on failure.
 
-```cpp
-Result<HeightField> scaleHeights(
-    const HeightField& input,
-    const HeightScaleParameters& parameters
-);
-```
+A failed operation must not modify the input.
 
-### Example
+A successful operation must not contain non-finite elevation values.
 
-Input:
+## 6. Terrain Metadata Preservation
 
-```text
-[1, 2, 3]
-```
-
-Scale:
-
-```text
-2.0
-```
-
-Output:
-
-```text
-[2, 4, 6]
-```
-
-## 8. Height Offset
-
-### Responsibility
-
-Add a constant value to every elevation sample.
-
-Transformation:
-
-```text
-outputHeight = inputHeight + offset
-```
-
-### Parameters
-
-```cpp
-struct HeightOffsetParameters {
-    double offset;
-};
-```
-
-### Validation
-
-- Offset must be finite.
-- Resulting elevation values must remain finite.
-
-### API
-
-```cpp
-Result<HeightField> offsetHeights(
-    const HeightField& input,
-    const HeightOffsetParameters& parameters
-);
-```
-
-### Example
-
-Input:
-
-```text
-[1, 2, 3]
-```
-
-Offset:
-
-```text
-10.0
-```
-
-Output:
-
-```text
-[11, 12, 13]
-```
-
-## 9. Height Clamping
-
-### Responsibility
-
-Restrict elevation values to a specified interval.
-
-Transformation:
-
-```text
-outputHeight = clamp(
-    inputHeight,
-    minimum,
-    maximum
-)
-```
-
-### Parameters
-
-```cpp
-struct HeightClampParameters {
-    double minimum;
-    double maximum;
-};
-```
-
-### Validation
-
-- Minimum and maximum must be finite.
-- Minimum must not exceed maximum.
-
-### API
-
-```cpp
-Result<HeightField> clampHeights(
-    const HeightField& input,
-    const HeightClampParameters& parameters
-);
-```
-
-### Example
-
-Input:
-
-```text
-[-5, 2, 15]
-```
-
-Range:
-
-```text
-[0, 10]
-```
-
-Output:
-
-```text
-[0, 2, 10]
-```
-
-## 10. Height Normalization
-
-### Responsibility
-
-Map the input terrain's elevation range into a specified target range.
-
-Transformation:
-
-```text
-normalizedHeight =
-    targetMinimum +
-    ((inputHeight - inputMinimum) /
-     (inputMaximum - inputMinimum)) *
-    (targetMaximum - targetMinimum)
-```
-
-### Parameters
-
-```cpp
-struct HeightNormalizationParameters {
-    double targetMinimum;
-    double targetMaximum;
-};
-```
-
-### Validation
-
-- Target bounds must be finite.
-- Target minimum must not exceed target maximum.
-- Input elevation values must be finite.
-
-### Constant Terrain Policy
-
-If all input elevations are equal:
-
-```text
-inputMinimum == inputMaximum
-```
-
-The normalization formula would divide by zero.
-
-The initial policy must handle this explicitly.
-
-For constant terrain, assign every output sample to the midpoint of the target range:
-
-```text
-outputHeight =
-    (targetMinimum + targetMaximum) / 2
-```
-
-The implementation must calculate this safely to avoid overflow.
-
-### API
-
-```cpp
-Result<HeightField> normalizeHeights(
-    const HeightField& input,
-    const HeightNormalizationParameters& parameters
-);
-```
-
-## 11. Smoothing
-
-### Responsibility
-
-Reduce local elevation variation by applying a neighborhood filter.
-
-The initial implementation will use a simple box filter.
-
-### Parameters
-
-```cpp
-struct SmoothingParameters {
-    std::uint32_t radius;
-    std::uint32_t iterations;
-};
-```
-
-### Neighborhood
-
-For each sample, inspect neighboring samples within the configured radius.
-
-The output elevation is the arithmetic mean of the selected neighborhood.
-
-Conceptually:
-
-```text
-outputHeight(x, z) =
-    sum(neighborHeights) /
-    neighborCount
-```
-
-### Boundary Policy
-
-The initial implementation uses a truncated neighborhood.
-
-Samples outside the terrain boundary are ignored.
-
-The average is calculated using only valid neighboring samples.
-
-This avoids introducing artificial values beyond the terrain boundary.
-
-### Validation
-
-- Radius must be greater than zero.
-- Iterations must be greater than zero.
-- Iteration count must remain within a documented implementation limit.
-- Intermediate results must remain finite.
-
-### API
-
-```cpp
-Result<HeightField> smoothTerrain(
-    const HeightField& input,
-    const SmoothingParameters& parameters
-);
-```
-
-### Iteration Semantics
-
-Each iteration operates on the result of the previous iteration.
-
-The original input remains unchanged.
-
-## 12. Metadata Preservation
-
-All initial processing operations must preserve:
+Unless an operation explicitly documents otherwise, processing must preserve:
 
 - Width.
 - Depth.
-- Spacing X.
-- Spacing Z.
-- Origin.
+- Horizontal spacing along X.
+- Horizontal spacing along Z.
+- Terrain origin.
 
-Only elevation samples may change.
+Only elevation values are transformed.
 
-Future operations that modify spatial metadata must explicitly document their behavior.
+The output must maintain the same sample ordering and coordinate mapping as the input.
 
-## 13. Operation Composition
+## 7. Smoothing
 
-Operations should be composable.
+### 7.1 Purpose
 
-Example:
+Smoothing reduces local elevation variations by replacing each sample with a weighted combination of neighboring samples.
 
-```text
-Generated Terrain
-      |
-      v
-  Scale Heights
-      |
-      v
-  Smooth Terrain
-      |
-      v
-  Clamp Heights
-      |
-      v
-Processed Terrain
-```
+It can be used to reduce high-frequency noise and produce smoother terrain.
 
-The initial API does not require a dedicated processing pipeline framework.
+### 7.2 Initial Algorithm
 
-Applications may compose operations through ordinary function calls.
+The initial implementation uses a neighborhood-based weighted average.
 
-A pipeline abstraction can be introduced later if it solves a concrete usability or performance problem.
+For an interior sample at grid position $(i,j)$:
 
-## 14. Error Handling
+$$
+h'_{i,j} =
+\frac{
+\sum_{(p,q)\in N(i,j)} w_{p,q}h_{p,q}
+}{
+\sum_{(p,q)\in N(i,j)} w_{p,q}
+}
+$$
 
-Processing functions return:
+Where:
+
+- $h_{p,q}$ is an input elevation.
+- $w_{p,q}$ is a non-negative neighborhood weight.
+- $N(i,j)$ is the selected neighborhood.
+- $h'_{i,j}$ is the resulting elevation.
+
+The initial implementation may use a uniform box neighborhood.
+
+The exact neighborhood size and boundary policy must be exposed through documented processing parameters.
+
+### 7.3 Boundary Policy
+
+The initial smoothing implementation uses a truncated neighborhood at terrain boundaries.
+
+Only valid samples inside the HeightField contribute to the result.
+
+The normalization weight is calculated from the samples actually included.
+
+This avoids requiring samples outside the terrain extent.
+
+### 7.4 Parameter Validation
+
+Smoothing parameters must satisfy their documented constraints.
+
+For the initial implementation:
+
+- Neighborhood radius must be non-negative.
+- Neighborhood dimensions must be representable.
+- Weight values must be finite and non-negative.
+- At least one positive weight must contribute to each output sample.
+
+Unsupported or invalid parameter combinations must return an error.
+
+## 8. Numerically Stable Smoothing
+
+A mathematically valid average can overflow when implemented using a naive accumulation strategy.
+
+For example:
 
 ```cpp
-Result<HeightField>
+sum += weight * elevation;
 ```
 
-Expected failures include:
+Even when the final weighted average is representable, the intermediate sum may overflow.
 
-| Condition | Error Category |
+The implementation must not rely solely on checking whether the final result is finite.
+
+### 8.1 Stable Weighted Average
+
+For non-negative weights, use a numerically stable weighted-mean strategy.
+
+One suitable approach is:
+
+1. Find the maximum absolute elevation magnitude among the contributing samples.
+2. If that magnitude is zero, return zero.
+3. Scale each elevation by the maximum magnitude.
+4. Accumulate the scaled weighted values.
+5. Accumulate the weights using a safe strategy.
+6. Divide the scaled weighted sum by the total weight.
+7. Rescale the result.
+8. Verify that the final elevation is finite.
+
+Conceptually:
+
+$$
+M = \max_k |h_k|
+$$
+
+For $M > 0$:
+
+$$
+\mu =
+M \cdot
+\frac{
+\sum_k w_k(h_k/M)
+}{
+\sum_k w_k
+}
+$$
+
+This avoids multiplying large elevations directly by weights.
+
+The implementation must also ensure that the accumulated weights cannot overflow.
+
+For a fixed small neighborhood, this may be achieved through bounded weights or normalized weights.
+
+For more general neighborhoods, use a stable accumulation strategy.
+
+### 8.2 Zero Magnitude
+
+If all contributing elevations are zero:
+
+$$
+M = 0
+$$
+
+The resulting weighted average is zero.
+
+The implementation must handle this case without division by zero.
+
+### 8.3 Intermediate Validation
+
+The implementation must validate:
+
+- Scaled elevations.
+- Weight normalization.
+- Accumulated weighted values.
+- Final rescaled elevations.
+
+If a result cannot be represented as a finite `double`, smoothing must fail.
+
+### 8.4 Iterative Smoothing
+
+If multiple iterations are supported, each iteration must operate on a well-defined intermediate buffer.
+
+The implementation must not update samples in-place in a way that causes the result to depend unintentionally on traversal order.
+
+A failed iteration must not expose partially processed output.
+
+## 9. Elevation Normalization
+
+### 9.1 Purpose
+
+Normalization transforms terrain elevations into a specified target range.
+
+Given the input elevation range:
+
+$$
+[h_{\min}, h_{\max}]
+$$
+
+and target range:
+
+$$
+[t_{\min}, t_{\max}]
+$$
+
+the conventional linear transformation is:
+
+$$
+h' =
+t_{\min}
++
+\frac{h-h_{\min}}{h_{\max}-h_{\min}}
+(t_{\max}-t_{\min})
+$$
+
+However, this direct expression is not sufficiently robust for all finite `double` values.
+
+The implementation must use an overflow-aware formulation.
+
+### 9.2 Parameter Validation
+
+The normalization operation must validate:
+
+- Target minimum is finite.
+- Target maximum is finite.
+- Target minimum is less than or equal to target maximum.
+- Input elevations are finite.
+
+A constant input field must be handled explicitly.
+
+### 9.3 Constant Input Field
+
+If:
+
+$$
+h_{\min} = h_{\max}
+$$
+
+the input has no elevation variation.
+
+The implementation must not divide by zero.
+
+The initial policy maps every sample to the target minimum.
+
+This behavior must be documented and tested.
+
+## 10. Numerically Stable Normalization
+
+### 10.1 Avoid Direct Range Subtraction
+
+For finite extreme values, the following expression may overflow:
+
+```cpp
+double range = maximum - minimum;
+```
+
+For example, subtracting a large negative finite value from a large positive finite value may produce infinity.
+
+The implementation must not assume that finite inputs guarantee finite intermediate arithmetic.
+
+### 10.2 Stable Input Scaling
+
+A suitable approach is to scale the input range before computing normalized coordinates.
+
+Let:
+
+$$
+S = \max(|h_{\min}|, |h_{\max}|)
+$$
+
+For $S > 0$, define:
+
+$$
+a = h_{\min}/S
+$$
+
+$$
+b = h_{\max}/S
+$$
+
+For each sample:
+
+$$
+x = h/S
+$$
+
+Then compute:
+
+$$
+u = \frac{x-a}{b-a}
+$$
+
+This avoids directly subtracting the original extreme values.
+
+The implementation must still verify that the denominator is positive and that all intermediate values are finite.
+
+The case $S=0$ corresponds to a zero-valued constant field and is handled by the constant-field policy.
+
+### 10.3 Target Range Mapping
+
+The normalized coordinate $u$ lies in the interval $[0,1]$.
+
+The target elevation is:
+
+$$
+h' = t_{\min} + u(t_{\max}-t_{\min})
+$$
+
+The target range subtraction may also overflow when the target bounds are extreme finite values.
+
+Therefore, the implementation must use an overflow-aware interpolation strategy.
+
+One suitable formulation is:
+
+$$
+h' = (1-u)t_{\min} + ut_{\max}
+$$
+
+The implementation must evaluate this expression carefully and verify the final result.
+
+It must not assume that a mathematically valid convex combination is automatically safe under every floating-point evaluation order.
+
+### 10.4 Output Validation
+
+Every normalized elevation must be finite.
+
+If the requested target range or intermediate calculation cannot produce representable finite outputs, normalization must fail.
+
+The implementation must not silently clamp results to the nearest finite value.
+
+## 11. Numerical Tolerance
+
+The initial smoothing and normalization operations do not use a geometric degeneracy tolerance.
+
+Their numerical policies are based on representability and finite-value validation.
+
+The implementation must not introduce arbitrary epsilon-based modifications to elevation values.
+
+Tolerance policies for geometric calculations belong to the Geometry module.
+
+## 12. Ownership and Memory
+
+Processing operations return a new HeightField.
+
+The result owns its elevation storage.
+
+The input HeightField remains unchanged.
+
+Temporary buffers must not escape through public APIs.
+
+If an operation requires multiple working buffers, their allocation and lifetime must be controlled within the operation.
+
+Allocation failure must be converted into an appropriate failure result where the project's error-handling policy permits it.
+
+## 13. Error Handling
+
+Public processing operations return:
+
+```cpp
+core::Result<terrain::HeightField>
+```
+
+Expected failure categories include:
+
+| Category | Example |
 |---|---|
-| Invalid scale | InvalidArgument |
-| Invalid offset | InvalidArgument |
-| Invalid clamp range | InvalidArgument |
-| Invalid normalization range | InvalidArgument |
-| Invalid smoothing parameters | InvalidArgument |
-| Invalid input terrain | InvalidData |
-| Non-finite intermediate result | InvalidData |
-| Allocation failure | ResourceExhausted |
+| Invalid input | Invalid HeightField |
+| Invalid parameter | Negative neighborhood radius |
+| Invalid weight | Non-finite or negative weight |
+| Invalid target range | Non-finite target bounds |
+| Numerical overflow | Unrepresentable intermediate or output |
+| Numerical failure | Non-finite generated elevation |
+| Resource failure | Allocation failure |
 
-Failure must not expose partially processed terrain.
+Errors should identify the operation and the reason for failure.
 
-The original input must remain unchanged after any failure.
+A failed operation must never return a partially valid HeightField as a successful result.
 
-## 15. Numerical Considerations
+## 14. Testing Requirements
 
-Processing algorithms must:
+### 14.1 Smoothing
 
-- Use double precision internally.
-- Avoid unnecessary intermediate allocations.
-- Validate results for finiteness.
-- Use numerically safe accumulation.
-- Avoid overflow where practical.
-- Document behavior for extreme input ranges.
+Test:
 
-For smoothing, the implementation must use an accumulation strategy appropriate for the supported elevation range.
-
-The initial implementation should prioritize correctness over aggressive optimization.
-
-## 16. Performance Considerations
-
-The initial implementation will be synchronous.
-
-Requirements:
-
-- Allocate output storage once where practical.
-- Traverse samples in row-major order.
-- Avoid unnecessary copies.
-- Reuse temporary buffers between smoothing iterations where appropriate.
-- Do not introduce multithreading before profiling.
-
-Performance optimizations must preserve documented numerical and behavioral contracts.
-
-## 17. Testing Requirements
-
-### Height Scaling
-
-- Positive scale.
-- Zero scale.
-- Negative scale.
-- Invalid non-finite scale.
-- Overflow detection.
-
-### Height Offset
-
-- Positive offset.
-- Negative offset.
-- Zero offset.
-- Non-finite offset.
-- Overflow detection.
-
-### Height Clamping
-
-- Values below minimum.
-- Values above maximum.
-- Values within range.
-- Equal minimum and maximum.
-- Invalid range.
-
-### Height Normalization
-
-- Normal terrain range.
-- Negative elevation range.
-- Target range with negative values.
-- Constant terrain.
-- Invalid target range.
-- Finite output guarantees.
-
-### Smoothing
-
-- Radius of one.
+- Uniform terrain.
+- Single elevated sample.
+- Boundary samples.
+- Different neighborhood sizes.
+- Zero-radius behavior.
 - Multiple iterations.
-- Boundary behavior.
-- Constant terrain preservation.
-- Smallest valid terrain.
-- Invalid radius.
-- Invalid iteration count.
-- Finite output guarantees.
+- Negative elevations.
+- Large finite elevations.
+- Small finite elevations.
+- Weighted averages with large weights.
+- Constant terrain.
+- Input immutability.
 
-### General Processing
+### 14.2 Normalization
 
-- Source terrain remains unchanged.
-- Metadata is preserved.
-- Output dimensions are preserved.
-- Processing results can be composed.
-- Invalid operations return errors.
-- Failure does not expose partial output.
+Test:
 
-All Processing tests must run without a graphics context.
+- Positive-only elevations.
+- Negative-only elevations.
+- Mixed positive and negative elevations.
+- Constant elevation fields.
+- Zero-valued fields.
+- Negative target ranges.
+- Target ranges crossing zero.
+- Extreme finite input elevations.
+- Extreme finite target bounds.
+- Invalid target bounds.
+- Non-finite input values.
 
-## 18. Initial Implementation Files
+### 14.3 Numerical Properties
 
-The initial Processing module should contain:
+Verify:
 
-```text
-include/dharaninirmana/processing/
-├── height_operations.hpp
-└── smoothing_operation.hpp
+- All successful output elevations are finite.
+- Smoothing preserves constant fields.
+- Smoothing produces values within the contributing neighborhood's minimum and maximum for non-negative weights.
+- Normalization maps the input minimum to the target minimum.
+- Normalization maps the input maximum to the target maximum.
+- Normalized values remain within the target range, subject to floating-point rounding.
+- Failed operations do not modify the input.
 
-src/processing/
-├── height_operations.cpp
-└── smoothing_operation.cpp
+## 15. Future Extensions
 
-tests/processing/
-├── height_operations_tests.cpp
-└── smoothing_operation_tests.cpp
-```
-
-A shared operation interface should be added only if multiple concrete use cases justify it.
-
-## 19. Future Extensions
-
-Potential future operations:
+The Processing module may eventually support:
 
 - Gaussian smoothing.
 - Median filtering.
-- Terrain erosion.
+- Bilateral filtering.
 - Hydraulic erosion.
 - Thermal erosion.
-- Slope calculation.
-- Curvature calculation.
-- Heightfield resampling.
-- Terrain cropping.
+- Slope and curvature analysis.
 - Terrain blending.
+- Hydrological analysis.
 
-These are outside the initial implementation scope.
+Each operation must define its own mathematical contract, parameter validation, boundary policy, and numerical behavior.
 
-## 20. Completion Criteria
+## 16. Related Documents
 
-The Processing API is ready for implementation when:
-
-- Mutation policy is explicit.
-- Initial operations are defined.
-- Parameters and validation rules are documented.
-- Boundary behavior is specified.
-- Metadata preservation is guaranteed.
-- Error handling is defined.
-- Numerical considerations are documented.
-- Independent tests are identified.
+- [API_DESIGN.md](API_DESIGN.md) — Public API conventions.
+- [CORE_API.md](CORE_API.md) — Error handling and foundational types.
+- [TERRAIN_DATA_API.md](TERRAIN_DATA_API.md) — HeightField representation.
+- [GENERATION_API.md](GENERATION_API.md) — Procedural terrain generation.
+- [GEOMETRY_API.md](GEOMETRY_API.md) — Geometry construction and numerical tolerances.
+- [DEPENDENCY_RULES.md](../architecture/DEPENDENCY_RULES.md) — Module dependency constraints.

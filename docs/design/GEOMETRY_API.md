@@ -3,740 +3,597 @@
 
 ## 1. Purpose
 
-This document defines the public geometry representation and mesh construction API for DharaniNirmana.
+The Geometry module converts terrain representations into geometric structures.
 
-The Geometry module converts terrain representations into general-purpose geometric data structures.
+Its initial responsibility is to construct indexed triangle meshes from HeightField data.
 
-Its initial responsibility is to construct an indexed triangle mesh from a HeightField.
+It also provides mesh validation and vertex normal generation.
 
-The resulting mesh must remain independent of rendering APIs.
+Geometry is a CPU-side representation layer. It must remain independent of graphics APIs and rendering infrastructure.
 
-## 2. Design Goals
+## 2. Design Principles
 
-The Geometry API must:
+The Geometry API follows these principles:
 
-- Represent triangle meshes efficiently.
-- Preserve vertex sharing through indexed topology.
-- Support positions and normals.
-- Generate consistent triangle winding.
-- Produce valid mesh indices.
-- Generate reliable vertex normals.
-- Detect degenerate geometry.
-- Remain independent of Vishwakarma.
-- Be testable without a graphics context.
+- **Graphics independence:** Geometry must not depend on graphics devices or rendering libraries.
+- **Explicit ownership:** Mesh objects own their vertex and index storage.
+- **Indexed representation:** Shared vertices should be represented through indices rather than unnecessary duplication.
+- **Consistent topology:** Mesh construction must use a documented triangle winding convention.
+- **Numerical robustness:** Geometric calculations must account for floating-point overflow, underflow, and degeneracy.
+- **Validation:** Invalid geometric data must be rejected explicitly.
+- **Deterministic construction:** Identical valid inputs must produce identical mesh topology and vertex ordering.
 
-## 3. Namespace and Header Organization
+## 3. Core Geometry Types
 
-Namespace:
+### 3.1 Vertex
 
-```cpp
-dharaninirmana::geometry
-```
+A vertex represents a position and its associated normal.
 
-Initial public headers:
-
-```text
-include/dharaninirmana/geometry/
-├── mesh.hpp
-├── mesh_builder.hpp
-└── mesh_validation.hpp
-```
-
-Implementation:
-
-```text
-src/geometry/
-├── mesh.cpp
-├── heightfield_mesh_builder.cpp
-├── mesh_validation.cpp
-└── normal_generator.cpp
-```
-
-Tests:
-
-```text
-tests/geometry/
-├── mesh_tests.cpp
-├── heightfield_mesh_builder_tests.cpp
-└── normal_generator_tests.cpp
-```
-
-## 4. Mesh Data Model
-
-### 4.1 Initial Representation
-
-The initial representation is an indexed triangle mesh.
-
-It contains:
-
-- A collection of vertices.
-- A collection of triangle indices.
-
-Each vertex contains:
-
-- Position.
-- Normal.
-
-### 4.2 Vertex Structure
-
-Conceptual structure:
+Conceptual declaration:
 
 ```cpp
+namespace dharaninirmana::geometry {
+
 struct Vertex {
-    Vec3d position;
-    Vec3d normal;
+    core::Vec3d position;
+    core::Vec3d normal;
 };
-```
 
-Both attributes use double precision.
-
-Additional attributes such as UV coordinates, colors, and tangents are deferred.
-
-### 4.3 Mesh Structure
-
-Conceptual API:
-
-```cpp
-class Mesh {
-public:
-    std::span<const Vertex> vertices() const noexcept;
-
-    std::span<const std::uint32_t> indices() const noexcept;
-
-    std::size_t vertexCount() const noexcept;
-
-    std::size_t indexCount() const noexcept;
-
-    std::size_t triangleCount() const noexcept;
-};
-```
-
-The actual implementation must define controlled construction and validation.
-
-The Mesh owns its vertex and index storage.
-
-External consumers receive read-only access.
-
-## 5. Indexed Mesh Representation
-
-An indexed mesh stores each logical vertex once and references it through indices.
-
-Example:
-
-```text
-Vertices:
-    V0
-    V1
-    V2
-    V3
-
-Indices:
-    0, 1, 2
-    2, 1, 3
-```
-
-Each group of three indices defines one triangle.
-
-Advantages:
-
-- Avoids duplicate vertex storage.
-- Preserves shared vertices.
-- Reduces CPU memory usage.
-- Makes topology explicit.
-- Allows efficient normal sharing.
-
-The canonical DharaniNirmana mesh representation must remain indexed.
-
-## 6. Triangle Topology
-
-### 6.1 Triangle Indexing
-
-The index array contains three indices per triangle.
-
-Therefore:
-
-```text
-indexCount % 3 == 0
-```
-
-Triangle count:
-
-```text
-triangleCount = indexCount / 3
-```
-
-### 6.2 Index Validation
-
-Every index must satisfy:
-
-```text
-index < vertexCount
-```
-
-Invalid indices must cause validation or construction to fail.
-
-### 6.3 Winding Convention
-
-DharaniNirmana uses:
-
-- X: Horizontal axis.
-- Y: Elevation.
-- Z: Horizontal axis.
-
-The initial terrain grid increases along positive X and positive Z.
-
-For each cell, define:
-
-```text
-v00 = vertex(x,     z)
-v10 = vertex(x + 1, z)
-v01 = vertex(x,     z + 1)
-v11 = vertex(x + 1, z + 1)
-```
-
-Generate:
-
-```text
-Triangle 1:
-    v00, v01, v10
-
-Triangle 2:
-    v10, v01, v11
-```
-
-Under this coordinate convention, these triangles produce upward-facing geometric normals for a flat heightfield.
-
-This winding convention must be preserved by the Mesh Builder.
-
-## 7. HeightField to Mesh Conversion
-
-### 7.1 Responsibility
-
-The Mesh Builder converts a valid HeightField into an indexed triangle mesh.
-
-Input:
-
-```cpp
-const HeightField& terrain
-```
-
-Output:
-
-```cpp
-Result<Mesh>
-```
-
-### 7.2 Vertex Generation
-
-For each heightfield sample:
-
-```text
-worldX = origin.x + x * spacingX
-worldY = height(x, z)
-worldZ = origin.z + z * spacingZ
-```
-
-Create:
-
-```text
-Vertex {
-    position = Vec3d(worldX, worldY, worldZ)
-    normal = initially zero
 }
 ```
 
-The vertex count is:
+The position uses the engine's coordinate convention:
 
-```text
-vertexCount = width * depth
+- X: Horizontal position.
+- Y: Elevation.
+- Z: Horizontal position.
+
+The normal is a normalized direction vector when valid.
+
+### 3.2 Mesh
+
+A Mesh represents indexed triangle geometry.
+
+Conceptual declaration:
+
+```cpp
+namespace dharaninirmana::geometry {
+
+class Mesh {
+public:
+    std::span<const Vertex> vertices() const noexcept;
+    std::span<const std::uint32_t> indices() const noexcept;
+
+    std::size_t vertexCount() const noexcept;
+    std::size_t indexCount() const noexcept;
+    std::size_t triangleCount() const noexcept;
+
+private:
+    std::vector<Vertex> vertices_;
+    std::vector<std::uint32_t> indices_;
+};
+
+}
 ```
 
-Each heightfield sample corresponds to exactly one mesh vertex.
+The Mesh owns both vertex and index storage.
 
-### 7.3 Index Generation
+Public access should not permit uncontrolled mutation that bypasses validation.
 
-For each terrain cell:
+The exact API may provide additional construction and inspection facilities, but ownership and validity guarantees must remain consistent.
+
+## 4. Indexed Mesh Representation
+
+A triangle mesh consists of:
+
+- A vertex array.
+- An index array.
+
+Every group of three consecutive indices represents one triangle.
+
+For a valid triangle mesh:
+
+$$
+indexCount \bmod 3 = 0
+$$
+
+Every index must refer to an existing vertex.
+
+The initial mesh representation uses 32-bit unsigned indices.
+
+The implementation must reject a mesh whose vertex count cannot be represented by the selected index type.
+
+## 5. HeightField-to-Mesh Conversion
+
+### 5.1 Purpose
+
+The HeightField mesh builder converts a regular height field into an indexed triangle mesh.
+
+Each height sample becomes one mesh vertex.
+
+Adjacent samples are connected to form two triangles per grid cell.
+
+### 5.2 Vertex Position
+
+For sample coordinates $(i,j)$:
+
+$$
+x = origin_x + i\,spacingX
+$$
+
+$$
+z = origin_z + j\,spacingZ
+$$
+
+$$
+y = heights[j \cdot width + i]
+$$
+
+The resulting vertex position is:
+
+$$
+P_{i,j} = (x,y,z)
+$$
+
+### 5.3 Vertex Index
+
+The vertex index is:
+
+$$
+V(i,j) = j \cdot width + i
+$$
+
+The builder must validate all size calculations and ensure that the resulting vertex indices are representable.
+
+### 5.4 Cell Triangulation
+
+For each grid cell, define:
+
+- $v_{00}$: Top-left grid sample.
+- $v_{10}$: Next sample along X.
+- $v_{01}$: Next sample along Z.
+- $v_{11}$: Diagonally opposite sample.
+
+The cell is divided into two triangles:
 
 ```text
-v00 = z * width + x
-v10 = z * width + (x + 1)
-v01 = (z + 1) * width + x
-v11 = (z + 1) * width + (x + 1)
+v00 -------- v10
+ |          / |
+ |        /   |
+ |      /     |
+ |    /       |
+ |  /         |
+v01 -------- v11
 ```
 
-Generate:
+The triangle indices are:
 
-```text
+```cpp
 v00, v01, v10
 v10, v01, v11
 ```
 
-The number of quads is:
+This winding convention produces upward-facing normals for a flat terrain under the engine's XZ-horizontal, Y-up coordinate system.
 
-```text
-quadCount = (width - 1) * (depth - 1)
-```
+The builder must use the same winding convention consistently.
 
-The number of triangles is:
+## 6. Triangle Count and Storage Validation
 
-```text
-triangleCount = 2 * quadCount
-```
+For a HeightField of width $W$ and depth $D$:
 
-The number of indices is:
+$$
+vertexCount = W \cdot D
+$$
 
-```text
-indexCount = 6 * quadCount
-```
+$$
+cellCount = (W-1)(D-1)
+$$
 
-All count calculations must be checked for integer overflow before allocation.
+$$
+triangleCount = 2(W-1)(D-1)
+$$
 
-## 8. Normal Generation
+$$
+indexCount = 6(W-1)(D-1)
+$$
 
-### 8.1 Purpose
+Every multiplication and addition used to calculate allocation sizes must be checked for integer overflow.
 
-Normals describe the orientation of the mesh surface.
+The builder must verify:
 
-They are required for lighting calculations in rendering systems.
+- HeightField dimensions are valid.
+- Vertex count is representable.
+- Index count is representable.
+- All vertex positions are finite.
+- All generated indices are valid.
+- Required memory allocations can be completed.
 
-### 8.2 Face Normal
+The builder must not allocate based on unchecked size calculations.
 
-For a triangle with positions A, B, and C:
+## 7. Vertex Normal Generation
 
-```text
-edge1 = B - A
-edge2 = C - A
-```
+### 7.1 Purpose
+
+Vertex normals provide a smooth directional representation of the mesh surface.
+
+The initial implementation uses area-weighted accumulation of triangle normals.
+
+### 7.2 Triangle Normal
+
+For triangle vertices $A$, $B$, and $C$, define:
+
+$$
+e_1 = B-A
+$$
+
+$$
+e_2 = C-A
+$$
 
 The unnormalized face normal is:
 
-```text
-faceNormal = cross(edge1, edge2)
-```
+$$
+N_f = e_1 \times e_2
+$$
 
-Its magnitude is proportional to twice the triangle area.
+Its magnitude is twice the triangle area.
 
-### 8.3 Vertex Normal
+### 7.3 Area-Weighted Accumulation
 
-The initial implementation uses area-weighted vertex normals.
+For each triangle, accumulate its unnormalized face normal into the normals of its three vertices:
+
+$$
+N_A \mathrel{+}= N_f
+$$
+
+$$
+N_B \mathrel{+}= N_f
+$$
+
+$$
+N_C \mathrel{+}= N_f
+$$
+
+After processing all triangles, normalize each accumulated vertex normal.
+
+This gives larger triangles proportionally greater influence.
+
+### 7.4 Final Normalization
+
+For an accumulated normal $N$:
+
+$$
+n = \frac{N}{\|N\|}
+$$
+
+A vertex with no valid contributing surface area cannot receive a meaningful normal.
+
+The builder must reject such a mesh or report the invalid normal according to the documented construction policy.
+
+The initial policy is to reject meshes containing vertices whose accumulated normal cannot be normalized.
+
+## 8. Degenerate Triangle Detection
+
+### 8.1 Definition
+
+A degenerate triangle is a triangle whose geometry does not define a sufficiently stable surface normal.
+
+Examples include:
+
+- Repeated vertices.
+- Zero-length edges.
+- Collinear vertices.
+- Nearly collinear vertices.
+
+Such triangles must be rejected during mesh construction and mesh validation.
+
+### 8.2 Angular Criterion
+
+The degeneracy criterion is based on the angle between the two edges.
+
+For non-zero edge vectors:
+
+$$
+\sin\theta =
+\frac{\|e_1 \times e_2\|}
+{\|e_1\|\|e_2\|}
+$$
+
+A triangle is considered degenerate when:
+
+$$
+\sin\theta \leq
+64 \cdot \epsilon_{\text{double}}
+$$
+
+where:
+
+$$
+\epsilon_{\text{double}} =
+\texttt{std::numeric\_limits<double>::epsilon()}
+$$
+
+This is a dimensionless angular criterion.
+
+It does not impose an arbitrary minimum absolute triangle area.
+
+### 8.3 Scale Independence
+
+The criterion must be independent of uniform geometric scaling.
+
+A geometrically similar triangle should not become degenerate merely because its coordinates are expressed at a different scale.
+
+### 8.4 Consistency
+
+The same degeneracy policy must be used by:
+
+- HeightField mesh construction.
+- General mesh validation.
+- Triangle normal generation.
+
+A triangle accepted by validation must satisfy the requirements needed by normal generation.
+
+## 9. Numerical Robustness
+
+Geometric calculations must account for the limitations of floating-point arithmetic.
+
+Checking only the final cross product is insufficient.
+
+Intermediate operations such as coordinate subtraction, multiplication, and accumulated normal addition may overflow or underflow.
+
+### 9.1 Position Validation
+
+Every vertex position must contain finite coordinates.
+
+NaN and infinite positions are invalid.
+
+### 9.2 Edge Construction
+
+Edge vectors are computed from vertex positions.
+
+The implementation must detect:
+
+- Non-finite edge components.
+- Zero-length edges.
+- Unrepresentable edge differences.
+
+A subtraction of two finite coordinates may still overflow.
+
+Such cases must be rejected or handled through a numerically safer computation.
+
+### 9.3 Stable Degeneracy Evaluation
+
+The degeneracy test must not directly rely on an unscaled cross product and squared lengths when these operations may overflow or underflow.
+
+A suitable strategy is:
+
+1. Construct the two edge vectors using checked arithmetic.
+2. Scale each edge independently by its maximum absolute component.
+3. Reject zero-length scaled edges.
+4. Compute the cross product of the scaled vectors.
+5. Compute their scaled lengths using a stable norm calculation.
+6. Evaluate the dimensionless angular criterion.
+7. Reject non-finite intermediate or final values.
+
+For scaled edge vectors $a$ and $b$:
+
+$$
+\sin\theta =
+\frac{\|a \times b\|}
+{\|a\|\|b\|}
+$$
+
+The result is independent of the original edge magnitudes.
+
+The implementation must use a stable norm calculation, such as `std::hypot` or an equivalent scaled algorithm.
+
+### 9.4 Face Normal Construction
+
+The actual area-weighted face normal may be too large or too small to represent directly even when the triangle's orientation is valid.
+
+The implementation must not assume that a valid angular test guarantees a representable unscaled cross product.
+
+The implementation should use scaled arithmetic or another robust strategy to preserve the face-normal direction and relative area contribution.
+
+If the required area-weighted quantity cannot be represented safely, the implementation must return an appropriate numerical failure rather than silently producing an invalid normal.
+
+### 9.5 Normal Accumulation
+
+Accumulating face normals may overflow even when individual face normals are finite.
+
+The implementation must use a stable accumulation strategy.
+
+Potential strategies include:
+
+- Scaled accumulation.
+- Compensated summation.
+- Controlled normalization with preserved relative weights.
+- A suitable combination of these techniques.
+
+The selected implementation must preserve the intended area-weighted behavior within documented numerical limits.
+
+### 9.6 Final Normal Validation
+
+Every successful mesh must satisfy:
+
+- All normal components are finite.
+- Each normal has non-zero magnitude.
+- Each normal is normalized within a documented floating-point tolerance.
+
+The implementation must reject invalid normals rather than returning a mesh containing NaN or infinite values.
+
+## 10. Mesh Validation
+
+Mesh validation checks the structural and numerical validity of a Mesh.
+
+### 10.1 Structural Validation
+
+Validate:
+
+- Index count is divisible by three.
+- Every index refers to an existing vertex.
+- Vertex storage is internally consistent.
+- Index storage is internally consistent.
+
+### 10.2 Position Validation
+
+Every position must be finite.
+
+### 10.3 Triangle Validation
 
 For every triangle:
 
-1. Calculate the unnormalized face normal.
-2. Add it to the accumulated normal of each triangle vertex.
-3. After processing all triangles, normalize each accumulated vertex normal.
+- All indices must be valid.
+- All referenced positions must be finite.
+- No edge may have zero length.
+- The triangle must satisfy the angular degeneracy criterion.
 
-Conceptually:
+### 10.4 Normal Validation
 
-```text
-vertexNormal =
-    normalize(sum(adjacentFaceNormals))
-```
+Every vertex normal must:
 
-Area weighting avoids giving small and large triangles equal influence.
+- Contain finite components.
+- Have non-zero magnitude.
+- Be normalized within the documented tolerance.
 
-### 8.4 Normal Validity
+### 10.5 Validation Result
 
-Before normalization:
+Mesh validation returns an explicit success or failure result.
 
-- The accumulated normal must be finite.
-- Its magnitude must be greater than zero.
-- It must not contain invalid numerical values.
+The failure diagnostic should identify the relevant category and, where practical, the affected vertex or triangle index.
 
-If an accumulated normal is invalid or cannot be normalized, mesh construction must fail.
+## 11. Ownership and Lifetime
 
-The implementation must not silently assign arbitrary normals.
+A Mesh owns its vertex and index storage.
 
-### 8.5 Normal Orientation
+It must remain valid independently of the HeightField used to construct it.
 
-Normals must be consistent with the triangle winding convention.
+The builder must not retain references to the source HeightField after construction.
 
-For a flat heightfield:
+Any spans returned by Mesh accessors are non-owning views.
 
-```text
-normal approximately equals (0, 1, 0)
-```
+Their lifetime is tied to the Mesh and may be invalidated by operations that modify its storage.
 
-This provides a useful baseline test.
+## 12. Error Handling
 
-## 9. Mesh Degeneracy Policy
+Public geometry operations return explicit results.
 
-### 9.1 Purpose
-
-A degenerate triangle has no reliable surface orientation.
-
-Such triangles can cause:
-
-- Undefined or unstable normals.
-- Numerical instability.
-- Invalid geometry.
-- Rendering artifacts.
-
-DharaniNirmana must reject degenerate triangles during mesh construction and mesh validation.
-
-Both operations must use the same criterion.
-
-### 9.2 Edge Validation
-
-For a triangle with positions A, B, and C:
-
-```text
-edge1 = B - A
-edge2 = C - A
-```
-
-Calculate the three edge lengths.
-
-Every edge must have a finite, strictly positive length.
-
-Triangles containing zero-length edges must be rejected.
-
-Non-finite edge calculations must also cause rejection.
-
-### 9.3 Scale-Aware Degeneracy Criterion
-
-A fixed world-space area tolerance is unsuitable because terrain can have very different spatial scales.
-
-Instead, use a dimensionless criterion based on the angle between the two edges.
-
-Define:
-
-```text
-sinTheta =
-    length(cross(edge1, edge2)) /
-    (length(edge1) * length(edge2))
-```
-
-The triangle is rejected when:
-
-```text
-sinTheta <= tolerance
-```
-
-The initial tolerance is:
-
-```text
-tolerance =
-    64 * std::numeric_limits<double>::epsilon()
-```
-
-This corresponds to a dimensionless threshold based on double-precision machine epsilon.
-
-### 9.4 Interpretation
-
-The criterion detects triangles whose two edges are:
-
-- Exactly collinear.
-- Numerically indistinguishable from collinear at the selected precision.
-
-It does not reject triangles merely because their world-space area is small.
-
-Consequently, geometrically similar triangles at different scales receive consistent treatment.
-
-### 9.5 Numerical Implementation
-
-The implementation must avoid unnecessary overflow and underflow when calculating the criterion.
-
-Requirements:
-
-- Check edge components for finiteness.
-- Check edge lengths.
-- Avoid directly multiplying extremely large edge lengths when calculating the denominator.
-- Use scaled calculations where necessary.
-- Ensure the final comparison is numerically meaningful.
-
-The implementation may use normalized edge directions:
-
-```text
-u = normalize(edge1)
-v = normalize(edge2)
-
-sinTheta = length(cross(u, v))
-```
-
-Then apply:
-
-```text
-sinTheta <= tolerance
-```
-
-Normalization itself must be implemented safely for large and small finite vectors.
-
-### 9.6 Scope of the Criterion
-
-This criterion addresses angular degeneracy.
-
-It does not impose:
-
-- A minimum terrain size.
-- A fixed minimum triangle area.
-- A maximum terrain slope.
-- A minimum world-space edge length.
-
-Those are separate domain or application constraints.
-
-### 9.7 Failure Behavior
-
-A degenerate triangle causes:
-
-```text
-ErrorCode::InvalidData
-```
-
-The error should include sufficient context to identify the offending triangle where practical.
-
-The Mesh Builder must not return a partially valid mesh after detecting a degenerate triangle.
-
-## 10. Mesh Builder API
-
-The initial public API should provide:
+Representative signatures:
 
 ```cpp
-class HeightFieldMeshBuilder {
-public:
-    Result<Mesh> build(
-        const HeightField& terrain
-    ) const;
-};
+core::Result<Mesh>
+build(const terrain::HeightField& heightField);
+
+core::Result<void>
+validate(const Mesh& mesh);
 ```
 
-The builder:
+Expected failure categories include:
 
-- Does not modify input terrain.
-- Generates one vertex per heightfield sample.
-- Generates two triangles per grid cell.
-- Calculates vertex normals.
-- Validates triangle geometry.
-- Returns a validated Mesh.
-- Does not create graphics resources.
-
-A stateless implementation is preferred.
-
-## 11. Mesh Validation
-
-### 11.1 Responsibility
-
-Mesh validation verifies structural and numerical correctness.
-
-Conceptual API:
-
-```cpp
-Result<void> validateMesh(
-    const Mesh& mesh
-);
-```
-
-### 11.2 Structural Validation
-
-Check:
-
-- Index count is divisible by three.
-- Every index references a valid vertex.
-- Required vertex attributes exist.
-- The mesh satisfies its documented topology requirements.
-
-### 11.3 Numerical Validation
-
-Check:
-
-- Vertex positions are finite.
-- Vertex normals are finite.
-- Normals are normalized within the documented tolerance.
-- Every triangle has valid edge lengths.
-- Every triangle passes the scale-aware degeneracy criterion.
-- No invalid geometry is silently accepted.
-
-### 11.4 Validation Consistency
-
-The same degeneracy helper and tolerance must be used by:
-
-- HeightFieldMeshBuilder.
-- General mesh validation.
-
-Avoid maintaining separate degeneracy implementations that can produce inconsistent results.
-
-### 11.5 Failure Behavior
-
-Invalid meshes must produce explicit errors.
-
-Validation must not modify the input mesh.
-
-## 12. Mesh Ownership and Lifetime
-
-Mesh exclusively owns:
-
-- Vertex storage.
-- Index storage.
-
-The initial design follows value semantics.
-
-Expected behavior:
-
-- Copying a Mesh creates independent storage.
-- Moving a Mesh transfers its storage.
-- Read-only spans do not extend the lifetime of the Mesh.
-- No graphics resources are owned by Mesh.
-
-No shared ownership is required initially.
-
-## 13. Error Handling
-
-Mesh construction and validation use Core Result and Error types.
-
-Expected failures include:
-
-| Condition | Error Category |
+| Category | Example |
 |---|---|
-| Invalid terrain input | InvalidData |
-| Vertex count overflow | InvalidArgument |
-| Index count overflow | InvalidArgument |
-| Invalid triangle index | InvalidData |
-| Non-finite vertex position | InvalidData |
-| Invalid normal | InvalidData |
-| Zero-length edge | InvalidData |
-| Degenerate triangle | InvalidData |
-| Allocation failure | ResourceExhausted |
+| Invalid input | Invalid HeightField |
+| Size overflow | Vertex or index count overflow |
+| Index overflow | Vertex count exceeds index representation |
+| Invalid position | Non-finite coordinate |
+| Degenerate geometry | Zero-length edge |
+| Angular degeneracy | Near-collinear triangle |
+| Invalid normal | Zero or non-finite normal |
+| Numerical failure | Unrepresentable intermediate or accumulation |
+| Resource failure | Allocation failure |
 
-Failed construction must not expose a partially initialized Mesh.
+A failed build must not expose a partially valid Mesh as a successful result.
 
-## 14. Performance Considerations
+## 13. Determinism
 
-The initial implementation should:
+For identical valid HeightField inputs, the builder must produce identical:
 
-- Allocate vertex and index storage once where practical.
-- Traverse terrain samples in row-major order.
-- Reserve safely calculated storage sizes.
-- Avoid unnecessary vertex duplication.
-- Avoid repeated allocation during normal generation.
-- Use deterministic iteration order.
+- Vertex ordering.
+- Vertex positions.
+- Index ordering.
+- Triangle winding.
+- Normal results, subject to the documented floating-point reproducibility policy.
 
-The degeneracy check should avoid unnecessary expensive operations while preserving numerical correctness.
+The implementation must not depend on unspecified iteration order or uninitialized storage.
 
-Optimization must follow profiling.
+## 14. Testing Requirements
 
-Parallel mesh construction is deferred.
+### 14.1 Mesh Construction
 
-## 15. Testing Requirements
+Test:
 
-### Vertex Generation
+- Minimum valid HeightField.
+- Flat terrain.
+- Sloped terrain.
+- Non-uniform horizontal spacing.
+- Non-zero terrain origin.
+- Negative elevations.
+- Large valid dimensions within practical test limits.
+
+### 14.2 Topology
+
+Verify:
 
 - Correct vertex count.
-- Correct world-space positions.
-- Non-zero TerrainOrigin.
-- Different X and Z spacing.
-- Correct elevation mapping.
-
-### Index Generation
-
 - Correct triangle count.
 - Correct index count.
-- Correct index ranges.
-- Correct triangle winding.
-- Correct topology for minimum valid dimensions.
+- All indices are valid.
+- Triangle winding is consistent.
+- Flat terrain produces upward-facing normals.
 
-### Normal Generation
+### 14.3 Degeneracy
 
-- Flat terrain produces upward normals.
-- Sloped terrain produces consistent normals.
-- Area-weighted accumulation is correct.
-- Zero accumulated normal is rejected.
-- Non-finite normals are rejected.
+Test:
 
-### Degeneracy Validation
+- Repeated vertices.
+- Zero-length edges.
+- Collinear triangles.
+- Nearly collinear triangles.
+- Valid triangles at different geometric scales.
+- Very small and very large coordinate magnitudes.
 
-- Normal triangle passes.
-- Exactly collinear triangle fails.
-- Nearly collinear triangle below tolerance fails.
-- Triangle above tolerance passes.
-- Zero-length edge fails.
-- Very small but valid triangle passes.
-- Very large but valid triangle passes.
-- Scale-equivalent triangles produce consistent results.
-- Non-finite coordinates fail.
+### 14.4 Numerical Robustness
 
-### Mesh Validation
+Test:
 
-- Valid mesh passes.
-- Index count not divisible by three fails.
-- Out-of-range indices fail.
-- Non-finite positions fail.
-- Invalid normals fail.
-- Degenerate triangles fail.
+- Non-finite positions.
+- Overflow during edge subtraction.
+- Cross-product overflow.
+- Cross-product underflow.
+- Normal accumulation overflow.
+- Invalid accumulated normals.
+- Normalization of very small and very large vectors.
 
-### Ownership
+### 14.5 Ownership
 
-- Copy independence.
-- Move behavior.
-- Read-only access.
-- No dependency on graphics resources.
+Verify:
 
-All Geometry tests must run without a graphics context.
+- Mesh remains valid after source HeightField destruction.
+- Mesh owns its vertex storage.
+- Mesh owns its index storage.
+- Accessor views follow documented lifetime rules.
 
-## 16. Initial Implementation Files
+## 15. Future Extensions
 
-The initial Geometry module should contain:
+The Geometry module may eventually support:
 
-```text
-include/dharaninirmana/geometry/
-├── mesh.hpp
-├── mesh_builder.hpp
-└── mesh_validation.hpp
-
-src/geometry/
-├── mesh.cpp
-├── heightfield_mesh_builder.cpp
-├── mesh_validation.cpp
-└── normal_generator.cpp
-
-tests/geometry/
-├── mesh_tests.cpp
-├── heightfield_mesh_builder_tests.cpp
-└── normal_generator_tests.cpp
-```
-
-Files may be combined if separate compilation units add unnecessary complexity.
-
-## 17. Future Extensions
-
-Potential future geometry capabilities:
-
-- UV coordinates.
-- Tangent generation.
-- Vertex colors.
-- Multiple mesh attributes.
-- Configurable triangulation.
-- Mesh partitioning.
 - Mesh simplification.
-- Level-of-detail meshes.
-- Mesh serialization.
-- Alternative geometry representations.
+- Mesh subdivision.
+- Mesh optimization.
+- Tangent generation.
+- Multiple surface representations.
+- Adaptive terrain tessellation.
+- Level-of-detail construction.
+- Mesh analysis and geometric measurements.
 
-These are outside the initial implementation scope.
+These capabilities must preserve the module's graphics-independent design.
 
-## 18. Design Decisions Deferred
+## 16. Related Documents
 
-The following details will be finalized during implementation:
-
-- Exact Mesh construction mechanism.
-- Public versus private validation entry points.
-- Error diagnostic format.
-- Mesh index type evolution.
-- Optional vertex attributes.
-- Normal generation utility boundaries.
-- Mesh bounds representation.
-
-The degeneracy criterion and its tolerance are architectural decisions and must remain consistent across construction and validation.
-
-## 19. Completion Criteria
-
-The Geometry API is ready for implementation when:
-
-- Vertex representation is defined.
-- Indexed topology is specified.
-- Triangle winding is explicit.
-- HeightField conversion is documented.
-- Normal generation is specified.
-- Degeneracy criterion is mathematically defined.
-- Numerical validation is specified.
-- Ownership is explicit.
-- Independent tests are identified.
+- `API_DESIGN.md` — Public API conventions.
+- `CORE_API.md` — Mathematical types and error handling.
+- `TERRAIN_DATA_API.md` — HeightField representation.
+- `GENERATION_API.md` — Terrain generation.
+- `PROCESSING_API.md` — Terrain processing.
+- `RENDERING_API.md` — Optional rendering integration.
+- `DEPENDENCY_RULES.md` — Module dependency constraints.
