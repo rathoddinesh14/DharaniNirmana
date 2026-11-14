@@ -318,7 +318,23 @@ The implementation must not assume that finite inputs guarantee finite intermedi
 
 ### 10.2 Stable Input Scaling
 
-A suitable approach is to scale the input range before computing normalized coordinates.
+A suitable approach is to select the normalization formula based on the signs of the input bounds.
+
+### Same-Sign Bounds
+
+When both bounds are non-negative or both are non-positive, direct subtraction is safe because the input interval does not cross zero.
+
+Compute:
+
+$$
+u = \frac{h-h_{\min}}{h_{\max}-h_{\min}}
+$$
+
+Since all input samples lie within the specified interval, the differences remain representable for finite bounds of the same sign.
+
+### Opposite-Sign Bounds
+
+When the input interval crosses zero, direct subtraction may overflow.
 
 Let:
 
@@ -326,7 +342,7 @@ $$
 S = \max(|h_{\min}|, |h_{\max}|)
 $$
 
-For $S > 0$, define:
+For $S > 0$, compute:
 
 $$
 a = h_{\min}/S
@@ -348,9 +364,16 @@ $$
 u = \frac{x-a}{b-a}
 $$
 
-This avoids directly subtracting the original extreme values.
+This keeps the scaled bounds within $[-1,1]$ and avoids overflow during range subtraction.
 
-The implementation must still verify that the denominator is positive and that all intermediate values are finite.
+### Validation
+
+The implementation must verify that:
+
+- The denominator is strictly positive.
+- All intermediate values are finite.
+- The normalized coordinate is within $[0,1]$, allowing for documented floating-point rounding.
+- The final result is finite.
 
 The case $S=0$ corresponds to a zero-valued constant field and is handled by the constant-field policy.
 
@@ -358,25 +381,21 @@ The case $S=0$ corresponds to a zero-valued constant field and is handled by the
 
 The normalized coordinate $u$ lies in the interval $[0,1]$.
 
-The target elevation is:
+Use C++20 `std::lerp` for target-range interpolation:
 
 $$
-h' = t_{\min} + u(t_{\max}-t_{\min})
+h' = \operatorname{lerp}(t_{\min}, t_{\max}, u)
 $$
 
-The target range subtraction may also overflow when the target bounds are extreme finite values.
+Conceptually:
 
-Therefore, the implementation must use an overflow-aware interpolation strategy.
-
-One suitable formulation is:
-
-$$
-h' = (1-u)t_{\min} + ut_{\max}
-$$
-
-The implementation must evaluate this expression carefully and verify the final result.
-
-It must not assume that a mathematically valid convex combination is automatically safe under every floating-point evaluation order.
+```cpp
+const double output = std::lerp(
+    targetMinimum,
+    targetMaximum,
+    normalizedValue
+);
+```
 
 ### 10.4 Output Validation
 

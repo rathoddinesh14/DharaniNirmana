@@ -5,7 +5,7 @@
 
 This document defines the optional rendering integration between DharaniNirmana and Vishwakarma.
 
-The Rendering module demonstrates how applications can consume DharaniNirmana terrain and geometry APIs through the Vishwakarma graphics foundation.
+The Rendering module demonstrates how applications can consume DharaniNirmana terrain and geometry APIs through an optional integration with Vishwakarma.
 
 It is not a mandatory part of the core terrain engine.
 
