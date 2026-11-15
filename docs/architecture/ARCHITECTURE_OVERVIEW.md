@@ -129,17 +129,16 @@ dharaninirmana::core
 Responsibilities:
 
 - Result and error abstractions.
-- Mathematical primitives.
 - Shared low-level utilities.
 - Common validation helpers where appropriate.
+
+Mathematical types and operations are owned by Aryabhatta. Engine APIs use Aryabhatta types directly.
 
 Initial public types:
 
 - Result<T>
 - Error
 - ErrorCode
-- Vec2d
-- Vec3d
 
 Core must not depend on terrain-specific, geometry-specific, or graphics-specific functionality.
 
@@ -291,7 +290,7 @@ More precisely:
 
 | Module | Permitted dependencies |
 |---|---|
-| Core | None |
+| Core | Aryabhatta |
 | Terrain | Core |
 | Generation | Core, Terrain |
 | Processing | Core, Terrain |
@@ -480,7 +479,7 @@ When disabled, the core engine must build and test without Vishwakarma or a grap
 
 ### Core Tests
 
-Test mathematical primitives, Result behavior, and common utilities.
+Test Error and Result behavior. Compile public API usage with explicit Aryabhatta headers where mathematical types are used.
 
 ### Terrain Tests
 

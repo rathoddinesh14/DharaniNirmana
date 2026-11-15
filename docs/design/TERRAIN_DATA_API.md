@@ -97,7 +97,7 @@ This type belongs to the Terrain domain because it expresses terrain-specific co
 
 ### 5.2 Design Rationale
 
-A generic `Vec2d` uses `x` and `y` coordinates.
+A generic Aryabhatta `DVec2` uses `x` and `y` coordinates.
 
 Using it for terrain origin introduces ambiguity because the second horizontal coordinate is Z, not elevation Y.
 
@@ -170,10 +170,12 @@ worldY = heights[z * width + x]
 worldZ = origin.z + z * spacingZ
 ```
 
-The resulting position is represented by:
+The resulting position is represented directly by:
 
 ```cpp
-dharaninirmana::core::Vec3d
+#include <aryabhatta/math/math.hpp>
+
+aryabhatta::math::DVec3
 ```
 
 The implementation must ensure that coordinate calculations produce finite results.
@@ -252,7 +254,7 @@ Invalid input must not modify terrain.
 ### 9.5 Position Access
 
 ```cpp
-Result<Vec3d> samplePosition(
+Result<aryabhatta::math::DVec3> samplePosition(
     std::size_t x,
     std::size_t z
 ) const;

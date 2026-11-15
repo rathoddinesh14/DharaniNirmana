@@ -1,4 +1,3 @@
-
 # Dependency Rules
 
 ## 1. Purpose
@@ -9,10 +8,12 @@ The primary objective is to maintain a graphics-independent terrain engine while
 
 The architecture distinguishes two concerns:
 
-1. DharaniNirmana Core Engine: terrain representation, generation, processing, and geometry construction.
-2. Optional Rendering Integration: demonstration of consuming DharaniNirmana geometry through Vishwakarma.
+1. **DharaniNirmana Core Engine:** Terrain representation, generation, processing, and geometry construction.
+2. **Optional Rendering Integration:** Demonstration of consuming DharaniNirmana geometry through Vishwakarma.
 
 The rendering integration is not a mandatory part of the core terrain engine.
+
+The engine also uses **Aryabhatta** as its approved foundational mathematical dependency. Aryabhatta is not a DharaniNirmana module; it is an external library used by Core.
 
 ## 2. Architectural Boundary
 
@@ -31,6 +32,8 @@ The core engine provides:
 These capabilities must work independently of graphics APIs.
 
 The core engine must support headless execution.
+
+Core may use Aryabhatta for foundational mathematical types and operations. This does not introduce a graphics dependency.
 
 ### 2.2 Optional Rendering Integration
 
@@ -53,7 +56,7 @@ The initial logical modules are:
 
 | Module | Responsibility | Classification |
 |---|---|---|
-| Core | Foundational types and error handling | Core Engine |
+| Core | Foundational engine utilities and error handling | Core Engine |
 | Terrain | HeightField representation | Core Engine |
 | Generation | Procedural terrain generation | Core Engine |
 | Processing | Terrain transformations | Core Engine |
@@ -63,13 +66,15 @@ The initial logical modules are:
 
 The Rendering module is deliberately outside the core terrain engine.
 
+Aryabhatta is an external foundational dependency of Core, not an additional DharaniNirmana module.
+
 ## 4. Dependency Matrix
 
 The following table defines permitted dependencies.
 
 | Module | Permitted Dependencies |
 |---|---|
-| Core | None |
+| Core | Aryabhatta (external foundational library) |
 | Terrain | Core |
 | Generation | Core, Terrain |
 | Processing | Core, Terrain |
@@ -79,40 +84,56 @@ The following table defines permitted dependencies.
 
 A module must not depend on a higher-level module in a way that introduces a circular dependency.
 
+Aryabhatta is permitted only as the approved foundational mathematical dependency. Its use does not permit Core to depend on other engine modules or graphics libraries.
+
 ## 5. Dependency Direction
 
 The core engine follows a directed dependency structure.
 
 ```text
-Core
-  |
-  v
-Terrain
-  |
-  +------------------+
-  |                  |
-  v                  v
-Generation       Processing
-  |
-  |
-Geometry
-  ^
-  |
+Aryabhatta
+    |
+    v
+   Core
+    |
+    v
+  Terrain
+    |
+    +------------------+
+    |                  |
+    v                  v
+Generation          Processing
+
+  Terrain
+    |
+    v
+ Geometry
+    |
+    v
 Rendering Integration
-  |
-  v
+    |
+    v
 Vishwakarma
 ```
 
-The diagram is conceptual. Generation and Processing are independent consumers of Terrain. Geometry also consumes Terrain directly.
+The diagram is conceptual.
 
-Rendering consumes Geometry and integrates with Vishwakarma.
+- Aryabhatta provides foundational mathematical types used by Core.
+- Terrain depends on Core.
+- Generation and Processing are independent consumers of Terrain.
+- Geometry also consumes Terrain directly.
+- Rendering consumes Geometry and integrates with Vishwakarma.
 
 Rendering must never become a dependency of the core terrain modules.
 
 ## 6. Module Dependency Rules
 
 ### 6.1 Core
+
+Core may depend on:
+
+- The C++ standard library.
+- Aryabhatta's public mathematical API, through `Aryabhatta::Math`.
 
 Core must not depend on:
 
@@ -126,6 +147,8 @@ Core must not depend on:
 - GLFW.
 
 Core provides foundational functionality only.
+
+Core must not duplicate mathematical types or operations already provided by Aryabhatta when the existing library API is suitable.
 
 ### 6.2 Terrain
 
@@ -226,6 +249,7 @@ An application may depend on:
 - Geometry.
 - Rendering, when graphics integration is required.
 - Vishwakarma, when the application owns its graphics lifecycle.
+- Aryabhatta directly only when application code itself uses Aryabhatta APIs.
 
 The application layer must not introduce dependencies from the core engine back into application-specific code.
 
@@ -259,11 +283,21 @@ It links against:
 Vishwakarma::Graphics
 ```
 
+### External Mathematical Dependency
+
+Core exposes Aryabhatta through:
+
+```text
+Aryabhatta::Math
+```
+
+Aryabhatta remains an explicit public dependency of Core. Engine APIs that expose Aryabhatta mathematical types use those types directly.
+
 ### Target Dependency Requirements
 
 | Target | Public Dependencies |
 |---|---|
-| DharaniNirmana::Core | None |
+| DharaniNirmana::Core | Aryabhatta::Math |
 | DharaniNirmana::Terrain | DharaniNirmana::Core |
 | DharaniNirmana::Generation | DharaniNirmana::Core, DharaniNirmana::Terrain |
 | DharaniNirmana::Processing | DharaniNirmana::Core, DharaniNirmana::Terrain |
@@ -271,6 +305,8 @@ Vishwakarma::Graphics
 | DharaniNirmana::Rendering | DharaniNirmana::Core, DharaniNirmana::Geometry, Vishwakarma::Graphics |
 
 Dependencies should use PRIVATE linkage unless consumers genuinely require the dependency's public types or headers.
+
+Aryabhatta must remain linked PUBLIC or INTERFACE from Core as the approved foundational mathematical dependency.
 
 Because the Rendering API directly exposes `vishwakarma::graphics::IDevice`, Vishwakarma must be available to consumers of that public interface. Its target dependency should therefore be PUBLIC unless the implementation later hides the device behind a DharaniNirmana-owned abstraction.
 
@@ -288,14 +324,15 @@ option(
 )
 ```
 
-When disabled:
+When rendering is disabled:
 
 - Core engine targets remain available.
+- Aryabhatta remains a required dependency of Core.
 - No Vishwakarma dependency is required.
 - No graphics context is required.
 - Core tests can run in a headless environment.
 
-When enabled:
+When rendering is enabled:
 
 - Vishwakarma must be available.
 - The Rendering target is built.
@@ -303,6 +340,8 @@ When enabled:
 - Example applications may demonstrate the full pipeline.
 
 The exact Vishwakarma discovery mechanism will be defined in the CMake design.
+
+Aryabhatta discovery must be handled independently of the Rendering option. Disabling Rendering must not disable or bypass Core's Aryabhatta dependency.
 
 ## 9. Public Header Boundaries
 
@@ -326,6 +365,8 @@ Core engine headers must not include:
 - Vulkan headers.
 - Vishwakarma graphics headers.
 
+Public headers that use Aryabhatta types must include the corresponding Aryabhatta public headers explicitly.
+
 Rendering headers may include Vishwakarma public headers where required by their API contracts.
 
 The Rendering target must not expose graphics dependencies through unrelated core targets.
@@ -340,6 +381,8 @@ Examples:
 - Processing consumes and produces HeightField.
 - Geometry consumes HeightField and produces Mesh.
 - Rendering consumes Mesh and submits it through Vishwakarma.
+
+Core uses Aryabhatta for foundational mathematical representation, but the terrain engine must not become coupled to graphics implementation details.
 
 The core engine must not know how its output will be visualized.
 
@@ -366,6 +409,8 @@ The following dependencies are prohibited:
 - Global mutable state shared between modules.
 - Application-specific code inside foundational modules.
 
+The approved Aryabhatta dependency of Core is not prohibited. No other external mathematical or graphics dependency should be added to Core without an explicit architecture decision.
+
 ## 12. Testing Boundaries
 
 Core engine tests must run without graphics infrastructure.
@@ -380,6 +425,8 @@ Core engine tests must run without graphics infrastructure.
 | Rendering | Potentially |
 | Application Integration | Potentially |
 
+Core tests may require Aryabhatta and its transitive build dependencies, but must not require a graphics context.
+
 Rendering conversion logic should be tested independently of actual graphics submission wherever practical.
 
 Integration tests may require a graphics-capable environment.
@@ -391,6 +438,7 @@ Every module must document ownership of its public data structures.
 Initial conventions:
 
 - Core types follow value semantics.
+- Aryabhatta owns mathematical types and operations; DharaniNirmana APIs use those types directly.
 - HeightField owns elevation storage.
 - Mesh owns vertex and index storage.
 - Generators own their algorithm configuration.
@@ -426,11 +474,15 @@ A new module must define:
 
 New functionality must not introduce unnecessary dependencies into the core terrain engine.
 
+New foundational dependencies must be evaluated explicitly. Aryabhatta remains the approved mathematical library; avoid introducing duplicate mathematical implementations or unnecessary dependencies.
+
 ## 15. Completion Criteria
 
 The dependency architecture is considered complete when:
 
 - Core engine boundaries are explicit.
+- Aryabhatta is documented as Core's approved external mathematical dependency.
+- Core's public dependency on `Aryabhatta::Math` is explicit.
 - Rendering is an optional integration.
 - Vishwakarma is isolated from core engine modules.
 - Dependency direction is documented.

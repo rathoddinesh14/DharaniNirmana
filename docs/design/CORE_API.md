@@ -1,18 +1,18 @@
-
 # Core API
 
 ## 1. Purpose
 
 The Core module provides foundational types and abstractions shared across DharaniNirmana.
 
-It is the lowest-level module in the architecture and must remain independent of all other DharaniNirmana modules.
+It is the lowest-level module in the engine architecture and must remain independent of all other DharaniNirmana modules.
 
 Core provides:
 
-- Mathematical vector types.
 - Error representation.
 - Explicit result types.
 - Shared low-level utilities.
+
+Core is responsible for exposing the foundational types required by the engine while avoiding unnecessary duplication of functionality already provided by established dependencies.
 
 The Core API must be lightweight, predictable, and suitable for use throughout the engine.
 
@@ -20,9 +20,10 @@ The Core API must be lightweight, predictable, and suitable for use throughout t
 
 The Core API follows these principles:
 
-- **Minimal dependencies:** Depend only on the C++ standard library.
+- **Minimal dependencies:** Depend only on the C++ standard library and explicitly approved foundational libraries.
+- **Mathematical consistency:** Reuse Aryabhatta for mathematical types rather than maintaining duplicate vector implementations.
 - **Explicit errors:** Operations that may fail communicate failure through Result types.
-- **Value semantics:** Mathematical types should behave as ordinary value types.
+- **Value semantics:** Public mathematical types should behave as ordinary value types.
 - **Const correctness:** Read-only operations must not modify their operands.
 - **Numerical awareness:** Mathematical operations must document their behavior for invalid or unrepresentable values.
 - **Move support:** Result types must support move-only values.
@@ -44,86 +45,76 @@ The namespace must remain consistent across all public headers and implementatio
 The initial Core files are organized as follows:
 
 ```text
-.
-├── include/dharaninirmana/core/
-│   ├── result.hpp
-│   ├── error.hpp
-│   ├── error_code.hpp
-│   ├── vec2d.hpp
-│   └── vec3d.hpp
-├── src/core/
-│   └── [private implementation files, if required]
-└── tests/core/
-    └── [Core API tests]
+include/dharaninirmana/core/
+├── result.hpp
+├── error.hpp
+└── error_code.hpp
+
+src/core/
+└── [private implementation files, if required]
+
+tests/core/
+└── [Core API tests]
 ```
 
-Public headers define the Core API. Exact implementation and test filenames may be determined as implementation is organized.
+Public headers define the Core API.
+
+Core does not define or alias mathematical types. Aryabhatta owns mathematical types and operations, and consumers use its public types directly.
+
+Exact implementation and test filenames may be determined as implementation is organized.
 
 ## 5. Mathematical Types
 
-### 5.1 Vec2d
+### 5.1 Mathematical Library
 
-`Vec2d` represents a two-dimensional vector using double-precision floating-point components.
+DharaniNirmana uses **Aryabhatta** as its foundational mathematical library.
 
-Conceptual declaration:
+Aryabhatta provides the mathematical types and operations required by the engine.
 
-```cpp
-namespace dharaninirmana::core {
+Engine modules use these types directly instead of implementing duplicate mathematical structures.
 
-struct Vec2d {
-    double x{};
-    double y{};
-};
+The dependency is exposed through the CMake target:
 
-}
+```cmake
+Aryabhatta::Math
 ```
 
-The type provides value semantics.
+The Core target keeps the dependency public so consumers of public engine targets can resolve Aryabhatta types.
 
-It may support common operations such as:
+### 5.2 Direct Type Usage
 
-- Addition.
-- Subtraction.
-- Scalar multiplication.
-- Scalar division.
+Use Aryabhatta's double-precision types directly and include the public Aryabhatta header wherever they are used:
+
+```cpp
+#include <aryabhatta/math/math.hpp>
+
+aryabhatta::math::DVec2 point;
+aryabhatta::math::DVec3 position;
+```
+
+Aryabhatta owns these types and their operations. DharaniNirmana must not add another alias layer or independently implement vector storage or mathematical operations.
+
+### 5.3 Mathematical Operations
+
+Vector operations are provided by Aryabhatta and its underlying mathematical implementation.
+
+Depending on the operation, consumers may use the corresponding Aryabhatta or GLM functionality.
+
+Common operations include:
+
+- Addition and subtraction.
+- Scalar multiplication and division.
 - Equality comparison.
 - Dot product.
+- Cross product for three-dimensional vectors.
 - Length calculation.
 - Normalization.
 
-The implementation must document the behavior of operations involving non-finite values and zero-length vectors.
+DharaniNirmana should not introduce wrapper functions for operations that are already adequately provided by Aryabhatta.
 
-### 5.2 Vec3d
+If the engine later requires domain-specific mathematical behavior, it should be introduced through an appropriately named engine-level abstraction rather than modifying the semantics of the underlying vector types.
 
-`Vec3d` represents a three-dimensional vector using double-precision floating-point components.
-
-Conceptual declaration:
-
-```cpp
-namespace dharaninirmana::core {
-
-struct Vec3d {
-    double x{};
-    double y{};
-    double z{};
-};
-
-}
-```
-
-The type may support:
-
-- Addition.
-- Subtraction.
-- Scalar multiplication.
-- Scalar division.
-- Equality comparison.
-- Dot product.
-- Cross product.
-- Length calculation.
-- Normalization.
-
-### 5.3 Coordinate Convention
+### 5.4 Coordinate Convention
 
 DharaniNirmana uses the following coordinate convention:
 
@@ -137,21 +128,25 @@ The vector types themselves remain generic mathematical types.
 
 They must not encode terrain-specific behavior.
 
-### 5.4 Numerical Behavior
+Terrain-specific coordinate interpretation belongs to the Terrain module.
 
-Vector operations must account for floating-point limitations.
+### 5.5 Numerical Behavior
+
+Aryabhatta is responsible for the mathematical behavior of its vector types.
+
+DharaniNirmana consumers must account for floating-point limitations when using these types.
 
 In particular:
 
 - Components may contain non-finite values unless an API explicitly requires finite vectors.
-- Length calculations should use numerically stable algorithms such as `std::hypot`.
+- Length calculations and other numerical operations must account for floating-point range limitations.
 - Squared length calculations may overflow for large finite components.
-- Normalization must handle zero-length vectors explicitly.
-- Division by zero must not silently produce an apparently valid result.
+- Normalization of zero-length vectors requires explicit consideration.
+- Division by zero must not be treated as a valid numerical operation without a documented contract.
 
-Core mathematical operations should not silently clamp or modify invalid inputs.
+Core must not silently clamp or modify invalid mathematical inputs.
 
-Where an operation can fail, its failure behavior must be documented.
+Where a DharaniNirmana operation requires finite vectors or other numerical constraints, the corresponding public API must document and validate those requirements.
 
 ## 6. Error Representation
 
@@ -180,7 +175,7 @@ The public interface should provide sufficient information to understand the fai
 
 ### 6.3 Error Information
 
-An Error should support:
+An Error supports:
 
 - An error category or code.
 - A human-readable diagnostic message.
@@ -190,7 +185,22 @@ Error categories should be stable enough for programmatic inspection.
 
 Diagnostic messages may evolve as implementations improve.
 
-### 6.4 Error Ownership
+### 6.4 Error Codes
+
+The initial error categories are:
+
+| Error Code | Meaning |
+|---|---|
+| `InvalidArgument` | An operation received an invalid argument. |
+| `InvalidData` | Input data does not satisfy the required constraints. |
+| `InvalidState` | An operation cannot be performed in the current state. |
+| `UnsupportedOperation` | The requested operation is not supported. |
+| `ResourceExhausted` | A required resource could not be obtained. |
+| `InternalError` | An unexpected internal failure occurred. |
+
+Additional categories may be introduced when justified by concrete API requirements.
+
+### 6.5 Error Ownership
 
 An Error owns its diagnostic information.
 
@@ -206,7 +216,7 @@ Copying and moving an Error must preserve its diagnostic information.
 
 It avoids using exceptions as the normal mechanism for reporting expected operational failures.
 
-The type is based on:
+The generic implementation is based on:
 
 ```cpp
 std::variant<T, Error>
@@ -247,7 +257,9 @@ The implementation may adjust constructors, constraints, and overloads while pre
 
 ### 7.3 Explicit Construction
 
-Results must be created through explicit factories:
+Results must be created through explicit factories.
+
+Success:
 
 ```cpp
 auto result =
@@ -285,21 +297,21 @@ Calling `value()` when the result contains an Error is a programming error.
 
 The implementation must report this misuse explicitly.
 
-The chosen access mechanism must have documented behavior, such as throwing `std::logic_error`.
+The chosen access mechanism uses `std::logic_error`.
 
 The implementation must not return an uninitialized or fabricated value.
 
-Value access should provide appropriate lvalue, const-lvalue, and rvalue overloads.
+Value access provides appropriate lvalue, const-lvalue, and rvalue overloads.
 
 ### 7.6 Error Access
 
 Calling `error()` when the result contains a value is a programming error.
 
-The implementation must report this misuse explicitly, such as through `std::logic_error`.
+The implementation must report this misuse explicitly through `std::logic_error`.
 
 The implementation must not fabricate an Error or return invalid storage.
 
-Appropriate lvalue, const-lvalue, and rvalue overloads should be provided.
+Appropriate lvalue, const-lvalue, and rvalue overloads are provided.
 
 ## 8. Move-Only Value Support
 
@@ -386,7 +398,7 @@ Calling `value()` when the result represents failure is a programming error and 
 
 Calling `error()` when the result represents success is also a programming error and must be reported explicitly.
 
-The implementation should use `std::logic_error` for these invalid access operations.
+The implementation uses `std::logic_error` for these invalid access operations.
 
 ## 10. Exception Policy
 
@@ -429,6 +441,8 @@ Error propagation must not silently convert a failure into success.
 
 ## 12. Type and Header Dependencies
 
+### 12.1 Standard Library Dependencies
+
 Core may depend on standard library facilities including:
 
 - `<variant>`
@@ -444,24 +458,52 @@ Core may depend on standard library facilities including:
 
 Only the headers required by each public declaration should be included.
 
-Core must not include headers belonging to other DharaniNirmana modules or Vishwakarma.
+### 12.2 Aryabhatta Dependency
+
+Core retains Aryabhatta as its approved foundational mathematical dependency. Engine APIs use Aryabhatta's mathematical types directly.
+
+The public dependency is exposed through:
+
+```cmake
+target_link_libraries(
+    DharaniNirmana_Core
+    INTERFACE
+    Aryabhatta::Math
+)
+```
+
+This dependency remains public as Core's approved foundational mathematical dependency and propagates to consumers of engine targets that use Aryabhatta public types.
+
+Consumers of DharaniNirmana Core must therefore be able to resolve the Aryabhatta dependency.
+
+Aryabhatta's own package configuration is responsible for resolving its required dependencies.
+
+### 12.3 Dependency Restrictions
+
+Core must not include headers belonging to:
+
+- DharaniNirmana Terrain.
+- DharaniNirmana Generation.
+- DharaniNirmana Processing.
+- DharaniNirmana Geometry.
+- DharaniNirmana Rendering.
+- Vishwakarma.
+
+Core must not depend on higher-level engine modules.
+
+Aryabhatta is the approved foundational mathematical dependency.
 
 ## 13. Testing Requirements
 
-### 13.1 Mathematical Types
+### 13.1 Mathematical Type Usage
 
 Test:
 
-- Default construction.
-- Component initialization.
-- Arithmetic operations.
-- Dot product.
-- Cross product.
-- Length calculation.
-- Zero-length normalization behavior.
-- Large finite components.
-- Non-finite components.
-- Overflow and underflow-sensitive calculations.
+- Public headers that use mathematical vectors compile with explicit Aryabhatta includes.
+- Geometry positions and normals use `aryabhatta::math::DVec3` directly.
+- Geometry retains supplied double-precision values.
+
+Tests should verify DharaniNirmana's public API usage rather than re-test Aryabhatta's mathematical implementation.
 
 ### 13.2 Result<T>
 
@@ -505,18 +547,20 @@ Test:
 
 ## 14. Future Extensions
 
-Core may eventually include additional foundational mathematical types and utilities.
+Core may eventually include additional foundational engine utilities. Mathematical types remain owned by Aryabhatta.
 
 Potential additions include:
 
-- Vec2f and Vec3f.
-- Mat3d and Mat4d.
-- Quaternion.
-- Bounding volumes.
-- Numerical utility functions.
+- Direct use of Aryabhatta matrices and quaternion types where required.
+- Generic numerical utility functions.
 - Additional error categories.
+- Shared low-level utilities.
 
 New abstractions must remain generic and must not introduce dependencies on higher-level engine modules.
+
+Before adding a mathematical abstraction, evaluate whether Aryabhatta already provides the required functionality.
+
+Avoid duplicating functionality that belongs in the mathematical library.
 
 ## 15. Related Documents
 

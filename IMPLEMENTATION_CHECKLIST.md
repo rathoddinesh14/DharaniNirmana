@@ -69,4 +69,4 @@ cmake --build build --target help
 
 ## Scope boundary
 
-This increment establishes build structure and Core error/result primitives only. It does not implement `Vec2d`, `Vec3d`, `HeightField`, generation algorithms, processing algorithms, mesh types/builders, or rendering integration. Those should be separate increments with focused tests.
+This increment establishes build structure and Core error/result primitives only. It does not implement mathematical types, HeightField, generation algorithms, processing algorithms, mesh types/builders, or rendering integration. Aryabhatta owns mathematical types and operations; engine APIs use those types directly. Other capabilities should be separate increments with focused tests.

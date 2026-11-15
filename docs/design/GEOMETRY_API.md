@@ -32,15 +32,19 @@ A vertex represents a position and its associated normal.
 Conceptual declaration:
 
 ```cpp
+#include <aryabhatta/math/math.hpp>
+
 namespace dharaninirmana::geometry {
 
 struct Vertex {
-    core::Vec3d position;
-    core::Vec3d normal;
+    aryabhatta::math::DVec3 position;
+    aryabhatta::math::DVec3 normal;
 };
 
 }
 ```
+
+The position and normal use Aryabhatta's double-precision vector type directly. Aryabhatta owns the mathematical type and operations.
 
 The position uses the engine's coordinate convention:
 

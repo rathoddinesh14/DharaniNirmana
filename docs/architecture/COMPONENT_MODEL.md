@@ -19,7 +19,7 @@ The initial component set is:
 | Component | Module | Responsibility |
 |---|---|---|
 | Result and Error | Core | Failure reporting |
-| Mathematical Primitives | Core | Shared mathematical types |
+| Aryabhatta Mathematical Types | Aryabhatta | Mathematical types and operations used directly by engine APIs |
 | TerrainOrigin | Terrain | Terrain placement |
 | HeightField | Terrain | Terrain sample storage |
 | Generation Configuration | Generation | Common generation request |
@@ -65,15 +65,15 @@ Rendering components are optional and are not required by the core engine.
                       Vishwakarma
 ```
 
-Shared infrastructure:
+Shared engine infrastructure:
 
 ```text
 Core
   |
   +---- Result and Error
-  |
-  +---- Mathematical Primitives
 ```
+
+Mathematical types are provided by Aryabhatta and used directly by engine APIs.
 
 Terrain domain:
 
@@ -125,25 +125,13 @@ Construction is explicit through success and failure factories.
 
 All public modules use this shared error-reporting abstraction.
 
-### 4.2 Mathematical Primitives
+### 4.2 Mathematical Types
 
-**Module:** Core
+**Owner:** Aryabhatta
 
-Initial types:
+Engine APIs use `aryabhatta::math::DVec2` and `aryabhatta::math::DVec3` directly. Aryabhatta provides their mathematical operations; DharaniNirmana does not define aliases or duplicate vector implementations.
 
-```text
-Vec2d
-Vec3d
-```
-
-Responsibilities:
-
-- Represent two-dimensional and three-dimensional vectors.
-- Provide basic mathematical operations.
-- Support geometry calculations.
-- Remain independent of graphics libraries.
-
-Use double precision for core terrain and geometry calculations.
+Use double precision for terrain and geometry calculations.
 
 ## 5. Terrain Components
 
@@ -402,7 +390,7 @@ Initial attributes:
 - Position.
 - Normal.
 
-Both use DharaniNirmana mathematical types.
+Both use `aryabhatta::math::DVec3` directly.
 
 Initial numeric precision is double.
 
@@ -773,7 +761,7 @@ Each component must have focused unit tests.
 - Result success and failure.
 - Void Result behavior.
 - Move-only values.
-- Mathematical primitive operations.
+- Direct use of Aryabhatta types in public APIs.
 
 ### Terrain
 

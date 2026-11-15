@@ -177,8 +177,8 @@ Prefer value types for domain data.
 Examples:
 
 - TerrainOrigin.
-- Vec2d.
-- Vec3d.
+- aryabhatta::math::DVec2.
+- aryabhatta::math::DVec3.
 - GenerationParameters.
 - RenderParameters.
 
@@ -289,24 +289,11 @@ Do not silently convert unexpected programming errors into arbitrary error categ
 
 ## 8. Mathematical Types
 
-Core mathematical types belong to:
-
-```cpp
-dharaninirmana::core
-```
-
-Initial types:
-
-```text
-Vec2d
-Vec3d
-```
+Aryabhatta owns mathematical types and operations. Use its types directly, including `aryabhatta::math::DVec2` and `aryabhatta::math::DVec3`, and include the corresponding Aryabhatta public header explicitly.
 
 Use double precision for terrain and geometry calculations unless a specific API boundary requires another representation.
 
-Mathematical types should remain independent of graphics libraries.
-
-They should provide only the operations needed by the engine.
+Do not introduce a DharaniNirmana alias or duplicate vector implementation.
 
 ## 9. Terrain Coordinate Convention
 
@@ -345,7 +332,7 @@ terrain_origin.hpp
 
 TerrainOrigin represents the world-space X and Z location of the first heightfield sample.
 
-Do not use Vec2d to represent terrain origin.
+Do not use Aryabhatta `DVec2` to represent terrain origin.
 
 This distinction prevents accidental mixing of generic mathematical vectors and terrain placement semantics.
 
