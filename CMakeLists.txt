@@ -63,10 +63,25 @@ function(dharaninirmana_add_module target_name)
 endfunction()
 
 dharaninirmana_add_module(Core)
-dharaninirmana_add_module(Terrain)
 dharaninirmana_add_module(Generation)
 dharaninirmana_add_module(Processing)
 dharaninirmana_add_module(Geometry)
+
+add_library(DharaniNirmana_Terrain
+    src/terrain/height_field.cpp
+)
+add_library(DharaniNirmana::Terrain ALIAS DharaniNirmana_Terrain)
+
+target_compile_features(DharaniNirmana_Terrain PUBLIC cxx_std_20)
+target_include_directories(DharaniNirmana_Terrain
+    PUBLIC
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(DharaniNirmana_Terrain
+    PUBLIC
+        DharaniNirmana::Core
+)
 
 # Keep the dependency public for consumers of the engine's Aryabhatta-based
 # public APIs.
@@ -94,5 +109,6 @@ if(DHARANINIRMANA_BUILD_TESTS)
     include(CTest)
     if(BUILD_TESTING)
         add_subdirectory(tests/core)
+        add_subdirectory(tests/terrain)
     endif()
 endif()
